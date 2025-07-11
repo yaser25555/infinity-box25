@@ -151,8 +151,37 @@ export class WebRTCVoiceService {
   // Toggle mute
   async toggleMute(): Promise<boolean> {
     try {
+      // إذا لم يكن هناك stream، حاول إنشاؤه أولاً
       if (!this.localStream) {
-        throw new Error('No local stream available');
+        console.warn('⚠️ No local stream available, attempting to create one...');
+
+        // إذا كنا في غرفة، حاول إعادة إنشاء الـ stream
+        if (this.isJoined && this.roomId && this.userId) {
+          try {
+            this.localStream = await navigator.mediaDevices.getUserMedia({
+              audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+                sampleRate: 48000,
+                channelCount: 1
+              },
+              video: false
+            });
+            console.log('✅ Successfully recreated local stream');
+          } catch (streamError) {
+            console.error('❌ Failed to recreate local stream:', streamError);
+            // تبديل الحالة المحلية فقط
+            this.isMuted = !this.isMuted;
+            console.log(this.isMuted ? '🔇 Muted (local only)' : '🔊 Unmuted (local only)');
+            return this.isMuted;
+          }
+        } else {
+          // تبديل الحالة المحلية فقط
+          this.isMuted = !this.isMuted;
+          console.log(this.isMuted ? '🔇 Muted (local only)' : '🔊 Unmuted (local only)');
+          return this.isMuted;
+        }
       }
 
       const audioTrack = this.localStream.getAudioTracks()[0];
@@ -164,38 +193,106 @@ export class WebRTCVoiceService {
         return this.isMuted;
       }
 
-      throw new Error('No audio track found');
+      // إذا لم نجد audio track، تبديل الحالة المحلية
+      this.isMuted = !this.isMuted;
+      console.log(this.isMuted ? '🔇 Muted (no audio track)' : '🔊 Unmuted (no audio track)');
+      return this.isMuted;
+
     } catch (error) {
       console.error('Error toggling mute:', error);
-      this.onError?.(error as Error);
-      throw error;
+      // في حالة الخطأ، تبديل الحالة المحلية على الأقل
+      this.isMuted = !this.isMuted;
+      console.log(this.isMuted ? '🔇 Muted (fallback)' : '🔊 Unmuted (fallback)');
+      return this.isMuted;
     }
   }
 
   // Set mute state directly
   setMute(muted: boolean): void {
     try {
+      this.isMuted = muted;
+
       if (!this.localStream) {
-        console.warn('No local stream available for mute control');
+        console.warn('⚠️ No local stream available for mute control, state updated locally');
         return;
       }
 
       const audioTrack = this.localStream.getAudioTracks()[0];
       if (audioTrack) {
         audioTrack.enabled = !muted;
-        this.isMuted = muted;
-
         console.log(muted ? '🔇 Muted' : '🔊 Unmuted');
+      } else {
+        console.warn('⚠️ No audio track found, state updated locally');
       }
     } catch (error) {
       console.error('Error setting mute state:', error);
-      this.onError?.(error as Error);
+      // تحديث الحالة المحلية على الأقل
+      this.isMuted = muted;
     }
   }
 
   // Get current mute state
   getMuteState(): boolean {
     return this.isMuted;
+  }
+
+  // Check if local stream is available
+  hasLocalStream(): boolean {
+    return !!(this.localStream && this.localStream.getAudioTracks().length > 0);
+  }
+
+  // Get stream status for debugging
+  getStreamStatus(): { hasStream: boolean; hasAudioTrack: boolean; isJoined: boolean } {
+    return {
+      hasStream: !!this.localStream,
+      hasAudioTrack: !!(this.localStream && this.localStream.getAudioTracks().length > 0),
+      isJoined: this.isJoined
+    };
+  }
+
+  // Recreate local stream if needed
+  async recreateLocalStream(): Promise<boolean> {
+    try {
+      if (this.localStream) {
+        // إيقاف الـ stream الحالي
+        this.localStream.getTracks().forEach(track => track.stop());
+      }
+
+      this.localStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          sampleRate: 48000,
+          channelCount: 1
+        },
+        video: false
+      });
+
+      console.log('✅ Successfully recreated local stream');
+
+      // إعادة إضافة الـ stream للاتصالات الموجودة
+      this.peerConnections.forEach((pc, userId) => {
+        if (this.localStream) {
+          // إزالة المسارات القديمة
+          pc.getSenders().forEach(sender => {
+            if (sender.track && sender.track.kind === 'audio') {
+              pc.removeTrack(sender);
+            }
+          });
+
+          // إضافة المسارات الجديدة
+          this.localStream.getAudioTracks().forEach(track => {
+            pc.addTrack(track, this.localStream!);
+          });
+        }
+      });
+
+      return true;
+    } catch (error) {
+      console.error('❌ Failed to recreate local stream:', error);
+      return false;
+    }
   }
 
   // Create peer connection for a user

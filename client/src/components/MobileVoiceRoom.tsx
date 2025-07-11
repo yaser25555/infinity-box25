@@ -563,11 +563,19 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
         throw new Error('خدمة الصوت غير متاحة');
       }
 
+      // طباعة حالة الـ stream للتشخيص
+      const streamStatus = webrtcServiceRef.current.getStreamStatus();
+      console.log('🔍 Stream status before mute toggle:', streamStatus);
+
       // تبديل الكتم في WebRTC أولاً
       const newMutedState = await webrtcServiceRef.current.toggleMute();
 
       // تحديث الخادم
-      await apiService.toggleMute(newMutedState);
+      try {
+        await apiService.toggleMute(newMutedState);
+      } catch (serverError) {
+        console.warn('⚠️ Server update failed, continuing with local state:', serverError);
+      }
 
       // تحديث الحالة المحلية
       setIsMuted(newMutedState);
@@ -581,7 +589,22 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
       console.log(newMutedState ? '🔇 Muted successfully' : '🔊 Unmuted successfully');
     } catch (err: any) {
       console.error('Error toggling mute:', err);
-      setError(err.message || 'خطأ في تبديل كتم المايك');
+
+      // في حالة الخطأ، تبديل الحالة المحلية على الأقل
+      const fallbackState = !isMuted;
+      setIsMuted(fallbackState);
+
+      // إشعار المستخدمين الآخرين بالحالة الجديدة
+      wsService.send({
+        type: 'voice_room_update',
+        data: { action: 'mute_toggled', userId: user.id, isMuted: fallbackState }
+      });
+
+      console.log(`🔄 Fallback mute state: ${fallbackState ? 'muted' : 'unmuted'}`);
+      setError('تم تبديل الكتم محلياً - قد تحتاج لإعادة الانضمام للمقعد');
+
+      // إخفاء الخطأ بعد 3 ثوانٍ
+      setTimeout(() => setError(null), 3000);
     }
   };
 
