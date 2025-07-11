@@ -288,11 +288,7 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
       // إذا انضم مستخدم جديد للمقعد، ابدأ اتصال WebRTC
       if (data.action === 'seat_joined' && isInSeat && data.userId !== user.id) {
         setTimeout(() => {
-          // إرسال إشارة انضمام للمستخدم الجديد
-          wsService.send({
-            type: 'webrtc_offer',
-            data: { targetUserId: data.userId }
-          });
+          webrtcServiceRef.current?.sendOffer(data.userId);
         }, 1000);
       }
     };
@@ -314,10 +310,44 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
       }
     };
 
+    // معالج التحديثات الإدارية
+    const handleAdminActionUpdate = (data: any) => {
+      const { action, targetUserId, message } = data;
+
+      console.log('🔧 Admin action received:', action, 'for user:', targetUserId);
+
+      // إظهار إشعار للمستخدم المستهدف
+      if (targetUserId === user.id) {
+        setError(message || `تم تطبيق إجراء إداري: ${action}`);
+
+        if (action === 'kick') {
+          // إيقاف WebRTC قبل إعادة التحميل
+          if (webrtcServiceRef.current) {
+            webrtcServiceRef.current.leaveRoom().catch(console.error);
+          }
+          setTimeout(() => {
+            window.location.reload();
+          }, 2000);
+        } else if (action === 'removeSeat' && isInSeat) {
+          // إيقاف WebRTC عند الإزالة من المقعد
+          if (webrtcServiceRef.current) {
+            webrtcServiceRef.current.leaveRoom().catch(console.error);
+          }
+          setIsInSeat(false);
+          setCurrentSeatNumber(null);
+          setIsMuted(false);
+        }
+      }
+
+      // إعادة تحميل البيانات فقط (بدون إعادة تحميل WebRTC)
+      loadVoiceRoom();
+    };
+
     // إضافة معالجات الرسائل
     wsService.onMessage('voice_room_message', handleVoiceRoomMessage);
     wsService.onMessage('voice_room_update', handleVoiceRoomUpdate);
     wsService.onMessage('voice_activity', handleVoiceActivity);
+    wsService.onMessage('admin_action_update', handleAdminActionUpdate);
 
     // معالجة إغلاق الصفحة
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -341,6 +371,7 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
       wsService.offMessage('voice_room_message', handleVoiceRoomMessage);
       wsService.offMessage('voice_room_update', handleVoiceRoomUpdate);
       wsService.offMessage('voice_activity', handleVoiceActivity);
+      wsService.offMessage('admin_action_update', handleAdminActionUpdate);
       window.removeEventListener('beforeunload', handleBeforeUnload);
       window.removeEventListener('unload', handleUnload);
     };

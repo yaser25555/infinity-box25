@@ -16,6 +16,7 @@ export class WebRTCVoiceService {
   private localStream: MediaStream | null = null;
   private peerConnections: Map<string, RTCPeerConnection> = new Map();
   private remoteUsers: Map<string, VoiceUser> = new Map();
+  private pendingIceCandidates: Map<string, RTCIceCandidate[]> = new Map();
   private isJoined = false;
   private isMuted = false;
   private roomId: string | null = null;
@@ -117,6 +118,7 @@ export class WebRTCVoiceService {
         pc.close();
       });
       this.peerConnections.clear();
+      this.pendingIceCandidates.clear();
       
       // Stop local stream
       if (this.localStream) {
@@ -152,16 +154,16 @@ export class WebRTCVoiceService {
       if (!this.localStream) {
         throw new Error('No local stream available');
       }
-      
+
       const audioTrack = this.localStream.getAudioTracks()[0];
       if (audioTrack) {
         audioTrack.enabled = !audioTrack.enabled;
         this.isMuted = !audioTrack.enabled;
-        
+
         console.log(this.isMuted ? '🔇 Muted' : '🔊 Unmuted');
         return this.isMuted;
       }
-      
+
       throw new Error('No audio track found');
     } catch (error) {
       console.error('Error toggling mute:', error);
@@ -170,14 +172,46 @@ export class WebRTCVoiceService {
     }
   }
 
+  // Set mute state directly
+  setMute(muted: boolean): void {
+    try {
+      if (!this.localStream) {
+        console.warn('No local stream available for mute control');
+        return;
+      }
+
+      const audioTrack = this.localStream.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !muted;
+        this.isMuted = muted;
+
+        console.log(muted ? '🔇 Muted' : '🔊 Unmuted');
+      }
+    } catch (error) {
+      console.error('Error setting mute state:', error);
+      this.onError?.(error as Error);
+    }
+  }
+
+  // Get current mute state
+  getMuteState(): boolean {
+    return this.isMuted;
+  }
+
   // Create peer connection for a user
   private async createPeerConnection(userId: string): Promise<RTCPeerConnection> {
-    const pc = new RTCPeerConnection({ iceServers: this.iceServers });
-    
-    // Add local stream
+    const pc = new RTCPeerConnection({
+      iceServers: this.iceServers,
+      iceCandidatePoolSize: 10
+    });
+
+    // Add local stream with consistent ordering
     if (this.localStream) {
-      this.localStream.getTracks().forEach(track => {
+      // Add audio tracks first to ensure consistent m-line ordering
+      const audioTracks = this.localStream.getAudioTracks();
+      audioTracks.forEach(track => {
         pc.addTrack(track, this.localStream!);
+        console.log('➕ Added audio track to peer connection for:', userId);
       });
     }
     
@@ -236,13 +270,28 @@ export class WebRTCVoiceService {
       console.log('📥 Received offer from:', fromUserId);
       console.log('🔄 Creating peer connection and answer for:', fromUserId);
 
-      const pc = await this.createPeerConnection(fromUserId);
+      // Check if we already have a connection with this user
+      let pc = this.peerConnections.get(fromUserId);
+      if (pc && pc.signalingState !== 'stable') {
+        console.log('🔄 Closing existing unstable connection with:', fromUserId);
+        pc.close();
+        this.peerConnections.delete(fromUserId);
+        pc = null;
+      }
+
+      if (!pc) {
+        pc = await this.createPeerConnection(fromUserId);
+      }
+
       await pc.setRemoteDescription(offer);
       console.log('✅ Set remote description (offer)');
 
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       console.log('✅ Created and set local description (answer)');
+
+      // Process any pending ICE candidates
+      await this.processPendingIceCandidates(fromUserId);
 
       console.log('📤 Sending WebRTC answer to:', fromUserId);
       this.wsService.send({
@@ -270,6 +319,9 @@ export class WebRTCVoiceService {
         await pc.setRemoteDescription(answer);
         console.log('✅ Set remote description (answer) for:', fromUserId);
         console.log('🔗 WebRTC connection should be established with:', fromUserId);
+
+        // Process any pending ICE candidates
+        await this.processPendingIceCandidates(fromUserId);
       } else if (pc) {
         console.warn('⚠️ Peer connection not in correct state for answer:', pc.signalingState);
       } else {
@@ -285,12 +337,23 @@ export class WebRTCVoiceService {
   private async handleIceCandidate(data: any) {
     try {
       const { candidate, fromUserId } = data;
-      
+
       const pc = this.peerConnections.get(fromUserId);
-      if (pc) {
+      if (pc && pc.remoteDescription) {
+        // Only add ICE candidates after remote description is set
         await pc.addIceCandidate(candidate);
+        console.log('🧊 ICE candidate added for:', fromUserId);
+      } else if (pc) {
+        // Queue ICE candidates if remote description is not set yet
+        if (!this.pendingIceCandidates.has(fromUserId)) {
+          this.pendingIceCandidates.set(fromUserId, []);
+        }
+        this.pendingIceCandidates.get(fromUserId)!.push(candidate);
+        console.log('🧊 ICE candidate queued for:', fromUserId);
+      } else {
+        console.warn('⚠️ No peer connection found for ICE candidate from:', fromUserId);
       }
-      
+
     } catch (error) {
       console.error('❌ Error handling ICE candidate:', error);
     }
@@ -303,6 +366,13 @@ export class WebRTCVoiceService {
       if (userId === this.userId) return; // Skip self
 
       console.log('👤 User joined voice room:', userId);
+
+      // Check if we already have a connection with this user
+      if (this.peerConnections.has(userId)) {
+        console.log('🔄 Already have connection with:', userId);
+        return;
+      }
+
       console.log('🔄 Creating peer connection and offer for:', userId);
 
       // Create offer for new user
@@ -412,13 +482,77 @@ export class WebRTCVoiceService {
   // Stop voice activity detection
   private stopVoiceActivityDetection() {
     this.isMonitoringVoice = false;
-    
+
     if (this.audioContext) {
       this.audioContext.close();
       this.audioContext = null;
     }
-    
+
     this.analyser = null;
+  }
+
+  // Send offer to a specific user (public method)
+  async sendOffer(targetUserId: string): Promise<void> {
+    try {
+      console.log('📤 Sending offer to:', targetUserId);
+
+      if (!this.isJoined || !this.userId) {
+        console.warn('⚠️ Not joined to voice room, cannot send offer');
+        return;
+      }
+
+      // Check if we already have a connection
+      let pc = this.peerConnections.get(targetUserId);
+      if (pc && pc.signalingState !== 'stable') {
+        console.log('🔄 Closing existing unstable connection with:', targetUserId);
+        pc.close();
+        this.peerConnections.delete(targetUserId);
+        pc = null;
+      }
+
+      if (!pc) {
+        pc = await this.createPeerConnection(targetUserId);
+      }
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      console.log('📤 Sending WebRTC offer to:', targetUserId);
+      this.wsService.send({
+        type: 'webrtc_offer',
+        data: {
+          offer,
+          targetUserId,
+          fromUserId: this.userId
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Error sending offer to:', targetUserId, error);
+    }
+  }
+
+  // Process pending ICE candidates
+  private async processPendingIceCandidates(userId: string): Promise<void> {
+    const candidates = this.pendingIceCandidates.get(userId);
+    if (candidates && candidates.length > 0) {
+      console.log(`🧊 Processing ${candidates.length} pending ICE candidates for:`, userId);
+
+      const pc = this.peerConnections.get(userId);
+      if (pc && pc.remoteDescription) {
+        for (const candidate of candidates) {
+          try {
+            await pc.addIceCandidate(candidate);
+            console.log('🧊 Added pending ICE candidate for:', userId);
+          } catch (error) {
+            console.error('❌ Error adding pending ICE candidate:', error);
+          }
+        }
+      }
+
+      // Clear processed candidates
+      this.pendingIceCandidates.delete(userId);
+    }
   }
 
   // Getters
