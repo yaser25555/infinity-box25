@@ -175,7 +175,22 @@ export class WebRTCVoiceService {
     if (audioTrack) {
       audioTrack.enabled = !muted;
       this.isMuted = muted;
+      console.log(`🎤 Local audio ${muted ? 'muted' : 'unmuted'}`);
     }
+  }
+
+  // Set remote audio muted state
+  setRemoteAudioMuted(muted: boolean): void {
+    this.peerConnections.forEach((connection, userId) => {
+      const remoteStream = connection.getRemoteStreams()[0];
+      if (remoteStream) {
+        const audioTracks = remoteStream.getAudioTracks();
+        audioTracks.forEach(track => {
+          track.enabled = !muted;
+        });
+        console.log(`🔊 Remote audio from ${userId} ${muted ? 'muted' : 'unmuted'}`);
+      }
+    });
   }
 
   // Create peer connection for a user

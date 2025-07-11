@@ -283,15 +283,10 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
     };
 
     const handleVoiceRoomUpdate = (data: any) => {
-      // تحديث محلي بدلاً من إعادة تحميل كامل لتجنب التحميل المستمر
-      if (data.action && data.userId) {
-        updateLocalRoomData(data.action, data.userId);
-      } else {
-        // إعادة تحميل فقط في حالات محددة
-        if (data.action === 'room_settings_changed' || data.action === 'room_reset') {
-          loadVoiceRoom();
-        }
-      }
+      console.log('📢 Voice room update received:', data);
+
+      // إعادة تحميل كامل لضمان التزامن الصحيح
+      loadVoiceRoom();
 
       if (data.action === 'seat_joined' && isInSeat && data.userId !== user.id) {
         setTimeout(() => {
@@ -544,48 +539,76 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
   // تبديل كتم المايك
   const toggleMute = async () => {
     try {
+      if (!isInSeat) {
+        setError('يجب أن تكون في مقعد لاستخدام المايك');
+        return;
+      }
+
       if (!webrtcServiceRef.current) {
-        setError('خدمة الصوت غير متاحة');
+        setError('خدمة الصوت غير متاحة - جاري إعادة الاتصال...');
+        // محاولة إعادة تهيئة WebRTC
+        await initializeWebRTC();
         return;
       }
 
       const newMutedState = !isMuted;
+      console.log(`🎤 Toggling mute: ${isMuted} -> ${newMutedState}`);
 
-      // تحديث الحالة المحلية فوراً
-      setIsMuted(newMutedState);
-
-      // تطبيق الكتم في WebRTC فوراً
+      // تطبيق الكتم في WebRTC أولاً
       webrtcServiceRef.current.setMute(newMutedState);
 
-      // إشعار المستخدمين الآخرين فوراً
+      // تحديث الحالة المحلية
+      setIsMuted(newMutedState);
+
+      // تحديث الخادم
+      try {
+        await apiService.toggleMute(newMutedState);
+        console.log(`✅ Server mute state updated: ${newMutedState}`);
+      } catch (serverError) {
+        console.warn('Failed to update server mute state:', serverError);
+      }
+
+      // إشعار المستخدمين الآخرين
       wsService.send({
         type: 'voice_room_update',
         data: { action: 'mute_toggled', userId: user.id, isMuted: newMutedState }
       });
 
-      // تحديث الخادم في الخلفية (بدون انتظار)
-      apiService.toggleMute(newMutedState).catch(err => {
-        console.warn('Failed to update server mute state:', err);
-      });
-
     } catch (err: any) {
       console.error('Error toggling mute:', err);
       setError('خطأ في تبديل كتم المايك');
+      // إعادة تعيين الحالة في حالة الخطأ
+      setIsMuted(!isMuted);
     }
   };
 
   // كتم/إلغاء كتم الصوت
   const toggleSound = () => {
-    const newSoundMuted = !isSoundMuted;
-    setIsSoundMuted(newSoundMuted);
+    try {
+      const newSoundMuted = !isSoundMuted;
+      console.log(`🔊 Toggling sound: ${isSoundMuted} -> ${newSoundMuted}`);
 
-    // كتم جميع عناصر الصوت البعيدة
-    remoteAudiosRef.current.forEach(audio => {
-      audio.muted = newSoundMuted;
-    });
+      setIsSoundMuted(newSoundMuted);
 
-    // حفظ الحالة في localStorage
-    localStorage.setItem('soundMuted', newSoundMuted.toString());
+      // كتم جميع عناصر الصوت البعيدة
+      remoteAudiosRef.current.forEach(audio => {
+        audio.muted = newSoundMuted;
+        console.log(`🔊 Audio element muted: ${newSoundMuted}`);
+      });
+
+      // كتم جميع peer connections أيضاً
+      if (webrtcServiceRef.current) {
+        webrtcServiceRef.current.setRemoteAudioMuted(newSoundMuted);
+      }
+
+      // حفظ الحالة في localStorage
+      localStorage.setItem('soundMuted', newSoundMuted.toString());
+
+      console.log(`✅ Sound ${newSoundMuted ? 'muted' : 'unmuted'} successfully`);
+    } catch (error) {
+      console.error('Error toggling sound:', error);
+      setError('خطأ في تبديل كتم الصوت');
+    }
   };
 
   // معالجة تغيير النص

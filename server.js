@@ -4143,10 +4143,39 @@ wss.on('connection', (socket) => {
   socket.on('close', async () => {
     console.log('🛑 WebSocket client disconnected');
 
-    // إزالة المستخدم من قائمة العملاء المتصلين
     if (currentUserId) {
-      connectedClients.delete(currentUserId);
-      console.log(`🗑️ Removed user ${currentUserId} from connected clients`);
+      try {
+        // إزالة المستخدم من المقعد الصوتي إذا كان جالساً
+        await removeUserFromVoiceSeat(currentUserId);
+
+        // إشعار المستخدمين الآخرين بمغادرة المستخدم
+        const connectedClientsArray = Array.from(connectedClients.values());
+        const voiceRoomClients = connectedClientsArray.filter(client => client.isInVoiceRoom);
+
+        voiceRoomClients.forEach(client => {
+          if (client.socket.readyState === 1) {
+            client.socket.send(JSON.stringify({
+              type: 'user_left_voice',
+              data: { userId: currentUserId }
+            }));
+          }
+        });
+
+        // إرسال تحديث الغرفة الصوتية
+        voiceRoomClients.forEach(client => {
+          if (client.socket.readyState === 1) {
+            client.socket.send(JSON.stringify({
+              type: 'voice_room_update',
+              data: { action: 'user_disconnected', userId: currentUserId }
+            }));
+          }
+        });
+
+        connectedClients.delete(currentUserId);
+        console.log(`🗑️ Removed user ${currentUserId} from connected clients and voice seat`);
+      } catch (error) {
+        console.error('Error removing user from voice seat on disconnect:', error);
+      }
     }
   });
 });
