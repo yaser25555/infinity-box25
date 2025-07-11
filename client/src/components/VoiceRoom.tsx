@@ -567,6 +567,45 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
         </div>
       </div>
 
+      {/* أزرار التحكم للكمبيوتر */}
+      {isInSeat && (
+        <div className="hidden sm:block mb-6">
+          <div className="bg-gradient-to-r from-gray-800/50 to-purple-900/30 rounded-xl p-4 border border-purple-500/20">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                  <span className="text-green-400 font-medium">متصل - مقعد {currentSeatNumber}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={toggleMute}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-200 font-medium ${
+                    isMuted
+                      ? 'bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/25'
+                      : 'bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-600/25'
+                  }`}
+                  title={isMuted ? 'إلغاء كتم المايك' : 'كتم المايك'}
+                >
+                  {isMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                  <span>{isMuted ? 'إلغاء كتم المايك' : 'كتم المايك'}</span>
+                </button>
+
+                <button
+                  onClick={leaveSeat}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-white transition-all duration-200 font-medium shadow-lg shadow-red-600/25"
+                  title="مغادرة المقعد"
+                >
+                  <span>مغادرة المقعد</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* المقاعد الصوتية */}
         <div className="lg:col-span-2">

@@ -825,32 +825,7 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
     }
   }, []);
 
-  // محاكاة حالة التحدث للاختبار
-  const simulateSpeaking = () => {
-    if (!isInSeat) return;
 
-    // تحديث حالة التحدث محلياً للاختبار
-    setRoomData(prev => ({
-      ...prev,
-      seats: prev.seats.map(seat =>
-        seat.user?._id === user.id
-          ? { ...seat, isSpeaking: true }
-          : seat
-      )
-    }));
-
-    // إيقاف المحاكاة بعد 3 ثوان
-    setTimeout(() => {
-      setRoomData(prev => ({
-        ...prev,
-        seats: prev.seats.map(seat =>
-          seat.user?._id === user.id
-            ? { ...seat, isSpeaking: false }
-            : seat
-        )
-      }));
-    }, 3000);
-  };
 
 
 
@@ -949,40 +924,46 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
           </div>
         </div>
 
-        {/* Control Buttons */}
-        {console.log('🔍 isInSeat:', isInSeat, 'currentSeatNumber:', currentSeatNumber)}
-        {(isInSeat || currentSeatNumber !== null) && (
-          <div className="flex items-center gap-2 mb-3">
-            <button
-              onClick={toggleMute}
-              className={`py-1.5 px-3 rounded-lg transition-colors flex items-center justify-center gap-1 ${
-                isMuted
-                  ? 'bg-red-600 hover:bg-red-700 text-white'
-                  : 'bg-green-600 hover:bg-green-700 text-white'
-              }`}
-            >
-              {isMuted ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}
-              <span className="text-xs">{isMuted ? 'إلغاء كتم' : 'كتم مايك'}</span>
-            </button>
+        {/* Control Buttons - تظهر عندما يكون المستخدم في مقعد */}
+        {isInSeat && (
+          <div className="bg-gray-800/50 rounded-lg p-3 mb-3">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+              <span className="text-xs text-green-400 font-medium">متصل - مقعد {currentSeatNumber}</span>
+            </div>
 
-            <button
-              onClick={toggleSound}
-              className={`py-1.5 px-3 rounded-lg transition-colors flex items-center justify-center gap-1 ${
-                isSoundMuted
-                  ? 'bg-red-600 hover:bg-red-700 text-white'
-                  : 'bg-blue-600 hover:bg-blue-700 text-white'
-              }`}
-            >
-              {isSoundMuted ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
-              <span className="text-xs">{isSoundMuted ? 'إلغاء كتم' : 'كتم صوت'}</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={toggleMute}
+                className={`flex-1 py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-2 font-medium ${
+                  isMuted
+                    ? 'bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/25'
+                    : 'bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-600/25'
+                }`}
+              >
+                {isMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                <span className="text-sm">{isMuted ? 'إلغاء كتم' : 'كتم مايك'}</span>
+              </button>
 
-            <button
-              onClick={leaveSeat}
-              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded-lg text-white transition-colors text-xs"
-            >
-              مغادرة
-            </button>
+              <button
+                onClick={toggleSound}
+                className={`flex-1 py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-2 font-medium ${
+                  isSoundMuted
+                    ? 'bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/25'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/25'
+                }`}
+              >
+                {isSoundMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                <span className="text-sm">{isSoundMuted ? 'إلغاء كتم' : 'كتم صوت'}</span>
+              </button>
+
+              <button
+                onClick={leaveSeat}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-white transition-colors text-sm font-medium shadow-lg shadow-red-600/25"
+              >
+                مغادرة
+              </button>
+            </div>
           </div>
         )}
 
@@ -1003,14 +984,7 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
 
 
 
-          {isInSeat && (
-            <button
-              onClick={simulateSpeaking}
-              className="px-2 py-1 text-xs rounded bg-green-600 hover:bg-green-700 text-white transition-colors"
-            >
-              محاكاة تحدث
-            </button>
-          )}
+
 
           {audioPermission === 'denied' && (
             <span className="text-xs text-red-400">
@@ -1626,6 +1600,47 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
                 اضغط ESC للخروج السريع
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* شريط التحكم الثابت في أسفل الشاشة للهواتف */}
+      {isInSeat && (
+        <div className="fixed bottom-0 left-0 right-0 bg-gray-900/95 backdrop-blur-sm border-t border-gray-700 p-4 z-50 sm:hidden">
+          <div className="flex items-center justify-center gap-3 max-w-md mx-auto">
+            <button
+              onClick={toggleMute}
+              className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl transition-all duration-200 font-medium ${
+                isMuted
+                  ? 'bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/25'
+                  : 'bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-600/25'
+              }`}
+              title={isMuted ? 'إلغاء كتم المايك' : 'كتم المايك'}
+            >
+              {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+              <span className="text-sm">{isMuted ? 'إلغاء كتم' : 'كتم'}</span>
+            </button>
+
+            <button
+              onClick={toggleSound}
+              className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl transition-all duration-200 font-medium ${
+                isSoundMuted
+                  ? 'bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/25'
+                  : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/25'
+              }`}
+              title={isSoundMuted ? 'إلغاء كتم الصوت' : 'كتم الصوت'}
+            >
+              {isSoundMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+              <span className="text-sm">{isSoundMuted ? 'إلغاء كتم' : 'كتم'}</span>
+            </button>
+
+            <button
+              onClick={leaveSeat}
+              className="px-4 py-3 bg-red-600 hover:bg-red-700 rounded-xl text-white transition-all duration-200 font-medium shadow-lg shadow-red-600/25"
+              title="مغادرة المقعد"
+            >
+              <span className="text-sm">مغادرة</span>
+            </button>
           </div>
         </div>
       )}
