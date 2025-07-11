@@ -29,7 +29,8 @@ export class WebRTCVoiceService {
   private isMonitoringVoice = false;
   private isSpeaking = false;
   private lastVoiceActivitySent = 0;
-  private voiceActivityDebounce = 500; // 500ms debounce
+  private voiceActivityDebounce = 1000; // 1 second debounce
+  private voiceActivityInterval: number | null = null;
   
   // Callbacks
   public onUserJoined?: (user: VoiceUser) => void;
@@ -128,7 +129,7 @@ export class WebRTCVoiceService {
       
       // Stop voice monitoring
       this.stopVoiceActivityDetection();
-      
+
       // Notify server
       if (this.roomId && this.userId) {
         this.wsService.send({
@@ -136,8 +137,12 @@ export class WebRTCVoiceService {
           data: { roomId: this.roomId, userId: this.userId }
         });
       }
-      
+
+      // Reset all states
       this.isJoined = false;
+      this.isMuted = false;
+      this.roomId = null;
+      this.userId = null;
       this.remoteUsers.clear();
       
       console.log('✅ Left voice room successfully');
@@ -511,81 +516,111 @@ export class WebRTCVoiceService {
 
   // Start voice activity detection
   private startVoiceActivityDetection() {
-    if (!this.localStream || this.isMonitoringVoice) return;
-    
+    // إيقاف أي مراقبة سابقة
+    this.stopVoiceActivityDetection();
+
+    if (!this.localStream) {
+      console.warn('⚠️ Cannot start voice activity detection: No local stream');
+      return;
+    }
+
     try {
+      console.log('🎤 Starting voice activity detection');
+
       this.audioContext = new AudioContext();
       const source = this.audioContext.createMediaStreamSource(this.localStream);
       this.analyser = this.audioContext.createAnalyser();
-      
+
       this.analyser.fftSize = 256;
+      this.analyser.smoothingTimeConstant = 0.5; // تنعيم القراءات
       source.connect(this.analyser);
-      
+
       this.isMonitoringVoice = true;
       this.monitorVoiceActivity();
-      
+
     } catch (error) {
       console.error('❌ Error starting voice activity detection:', error);
+      this.isMonitoringVoice = false;
+      this.audioContext = null;
+      this.analyser = null;
     }
   }
 
   // Monitor voice activity
   private monitorVoiceActivity() {
     if (!this.analyser || !this.isMonitoringVoice) return;
-    
+
     const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
-    
+
     const checkActivity = () => {
-      if (!this.isMonitoringVoice) return;
-      
-      this.analyser!.getByteFrequencyData(dataArray);
-      
-      // Calculate average volume
-      const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
-      const level = Math.round(average * 10) / 10;
-      
-      const isSpeaking = level > this.voiceActivityThreshold;
-      const now = Date.now();
+      // التحقق من أن المراقبة ما زالت مطلوبة
+      if (!this.isMonitoringVoice || !this.analyser || !this.localStream) {
+        console.log('🛑 Stopping voice activity monitoring');
+        return;
+      }
 
-      // Only send voice activity if state changed or enough time passed
-      const stateChanged = isSpeaking !== this.isSpeaking;
-      const enoughTimePassed = now - this.lastVoiceActivitySent > this.voiceActivityDebounce;
+      try {
+        this.analyser.getByteFrequencyData(dataArray);
 
-      if (stateChanged || enoughTimePassed) {
-        // Send voice activity
-        if (this.onVoiceActivity && this.userId) {
-          this.onVoiceActivity({
-            userId: this.userId,
-            level,
-            isSpeaking
-          });
+        // Calculate average volume
+        const average = dataArray.reduce((sum, value) => sum + value, 0) / dataArray.length;
+        const level = Math.round(average * 10) / 10;
 
-          this.lastVoiceActivitySent = now;
-          this.isSpeaking = isSpeaking;
+        const isSpeaking = level > this.voiceActivityThreshold;
+        const now = Date.now();
 
-          // Only log state changes, not every update
-          if (stateChanged) {
+        // Only send voice activity if state changed
+        const stateChanged = isSpeaking !== this.isSpeaking;
+
+        if (stateChanged) {
+          // Send voice activity
+          if (this.onVoiceActivity && this.userId) {
+            this.onVoiceActivity({
+              userId: this.userId,
+              level,
+              isSpeaking
+            });
+
+            this.lastVoiceActivitySent = now;
+            this.isSpeaking = isSpeaking;
+
             console.log('🎤 Voice activity changed:', isSpeaking ? 'speaking' : 'silent', `(level: ${level})`);
           }
         }
+
+        // استخدام setTimeout بدلاً من requestAnimationFrame لتقليل التحديثات
+        this.voiceActivityInterval = window.setTimeout(checkActivity, 200); // كل 200ms
+      } catch (error) {
+        console.error('❌ Error in voice activity monitoring:', error);
+        this.stopVoiceActivityDetection();
       }
-      
-      requestAnimationFrame(checkActivity);
     };
-    
+
     checkActivity();
   }
 
   // Stop voice activity detection
   private stopVoiceActivityDetection() {
+    console.log('🛑 Stopping voice activity detection');
     this.isMonitoringVoice = false;
 
+    // إيقاف الـ interval
+    if (this.voiceActivityInterval) {
+      clearTimeout(this.voiceActivityInterval);
+      this.voiceActivityInterval = null;
+    }
+
     if (this.audioContext) {
-      this.audioContext.close();
+      try {
+        this.audioContext.close();
+      } catch (error) {
+        console.warn('⚠️ Error closing audio context:', error);
+      }
       this.audioContext = null;
     }
 
     this.analyser = null;
+    this.isSpeaking = false;
   }
 
   // Send offer to a specific user (public method)
