@@ -414,6 +414,23 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (isInSeat) {
+        console.log('🚪 Page unloading, user is in seat, preparing to leave...');
+
+        // إرسال إشعار بالمغادرة عبر WebSocket أولاً
+        try {
+          wsService.send({
+            type: 'leave_voice_room',
+            data: { roomId: `voice-room-${roomId}`, userId: user.id }
+          });
+        } catch (error) {
+          console.warn('Failed to send leave message via WebSocket:', error);
+        }
+
+        // إيقاف WebRTC
+        if (webrtcServiceRef.current) {
+          webrtcServiceRef.current.leaveRoom();
+        }
+
         e.preventDefault();
         e.returnValue = 'أنت حالياً في الغرفة الصوتية. هل تريد المغادرة؟';
         return 'أنت حالياً في الغرفة الصوتية. هل تريد المغادرة؟';
@@ -423,9 +440,19 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
     const handleUnload = () => {
       // إذا غادر المستخدم الصفحة وهو في مقعد، أرسل إشارة مغادرة
       if (isInSeat) {
-        navigator.sendBeacon('/api/voice-room/leave-seat', JSON.stringify({
-          userId: user.id
-        }));
+        console.log('🚪 Page unloaded, sending beacon to leave seat...');
+
+        const token = localStorage.getItem('token');
+        if (token) {
+          try {
+            // إرسال beacon مع التوكن في الهيدر
+            const formData = new FormData();
+            formData.append('token', token);
+            navigator.sendBeacon('/api/voice-room/leave-seat', formData);
+          } catch (error) {
+            console.warn('Failed to send beacon:', error);
+          }
+        }
       }
     };
 
