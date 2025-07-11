@@ -237,18 +237,27 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
 
     // معالج استقبال Voice Activity من المستخدمين الآخرين
     const handleVoiceActivity = (data: any) => {
-      console.log('📥 Received voice activity:', data);
       if (data.userId && data.userId !== user.id) {
         // تحديث Voice Activity للمستخدمين الآخرين
         setVoiceActivity(prev => {
           const newMap = new Map(prev);
           newMap.set(data.userId.toString(), {
-            uid: data.userId.toString(),
+            userId: data.userId.toString(),
             level: data.level,
             isSpeaking: data.isSpeaking
           });
           return newMap;
         });
+
+        // تحديث حالة التحدث في بيانات الغرفة
+        setRoomData(prev => ({
+          ...prev,
+          seats: prev.seats.map(seat =>
+            seat.user?._id === data.userId
+              ? { ...seat, isSpeaking: data.isSpeaking }
+              : seat
+          )
+        }));
       }
     };
 
@@ -433,28 +442,32 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
   const toggleMute = async () => {
     try {
       if (!webrtcServiceRef.current) {
-        throw new Error('خدمة الصوت غير متاحة');
+        setError('خدمة الصوت غير متاحة');
+        return;
       }
 
-      // تبديل الكتم في WebRTC
-      const newMutedState = await webrtcServiceRef.current.toggleMute();
+      const newMutedState = !isMuted;
 
-      // تحديث حالة الكتم في الخادم
-      await apiService.toggleMute(newMutedState);
-
-      // تحديث حالة الكتم محلياً
+      // تحديث الحالة المحلية فوراً
       setIsMuted(newMutedState);
 
-      // إشعار المستخدمين الآخرين
+      // تطبيق الكتم في WebRTC فوراً
+      webrtcServiceRef.current.setMute(newMutedState);
+
+      // إشعار المستخدمين الآخرين فوراً
       wsService.send({
         type: 'voice_room_update',
         data: { action: 'mute_toggled', userId: user.id, isMuted: newMutedState }
       });
 
-      console.log(newMutedState ? '🔇 Muted' : '🔊 Unmuted');
+      // تحديث الخادم في الخلفية (بدون انتظار)
+      apiService.toggleMute(newMutedState).catch(err => {
+        console.warn('Failed to update server mute state:', err);
+      });
+
     } catch (err: any) {
       console.error('Error toggling mute:', err);
-      setError(err.message || 'خطأ في تبديل كتم المايك');
+      setError('خطأ في تبديل كتم المايك');
     }
   };
 

@@ -122,7 +122,7 @@ const VoiceSeats: React.FC<VoiceSeatsProps> = ({
                       seat.isMuted
                         ? 'bg-red-600'
                         : seat.isSpeaking
-                          ? 'bg-green-600 animate-pulse'
+                          ? 'bg-green-600 animate-pulse shadow-green-500/50'
                           : 'bg-gray-600'
                     }`}>
                       {seat.isMuted ? (
@@ -131,6 +131,14 @@ const VoiceSeats: React.FC<VoiceSeatsProps> = ({
                         <Mic className="w-4 h-4 text-white" />
                       )}
                     </div>
+
+                    {/* مؤشر التحدث - دوائر متحركة */}
+                    {seat.isSpeaking && !seat.isMuted && (
+                      <div className="absolute inset-0 rounded-full">
+                        <div className="absolute inset-0 rounded-full border-2 border-green-400 animate-ping"></div>
+                        <div className="absolute inset-0 rounded-full border-2 border-green-400 animate-ping" style={{ animationDelay: '0.5s' }}></div>
+                      </div>
+                    )}
                   </div>
 
                   {/* معلومات المستخدم */}

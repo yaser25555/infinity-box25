@@ -123,8 +123,6 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [currentGame, setCurrentGame] = useState<string | null>(null);
   const [showGameArea, setShowGameArea] = useState(false);
-  const [audioTestMode, setAudioTestMode] = useState(false);
-  const [micLevel, setMicLevel] = useState(0);
   const [audioPermission, setAudioPermission] = useState<'granted' | 'denied' | 'prompt'>('prompt');
   const [isSoundMuted, setIsSoundMuted] = useState(false);
 
@@ -232,19 +230,28 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
     };
 
     // معالج النشاط الصوتي
-    webrtcServiceRef.current.onVoiceActivity = (isSpeaking: boolean, level: number) => {
-      setMicLevel(level);
-      console.log(`🎤 Voice activity: ${isSpeaking ? 'speaking' : 'silent'} (level: ${level})`);
-
-      // تحديث حالة التحدث في الغرفة
+    webrtcServiceRef.current.onVoiceActivity = (data: any) => {
+      // تحديث حالة التحدث في الغرفة المحلية
       setRoomData(prev => ({
         ...prev,
         seats: prev.seats.map(seat =>
           seat.user?._id === user.id
-            ? { ...seat, isSpeaking }
+            ? { ...seat, isSpeaking: data.isSpeaking }
             : seat
         )
       }));
+
+      // إرسال Voice Activity للمستخدمين الآخرين عبر WebSocket
+      if (isInSeat) {
+        wsService.send({
+          type: 'voice_activity',
+          data: {
+            userId: user.id,
+            level: data.level,
+            isSpeaking: data.isSpeaking
+          }
+        });
+      }
     };
 
     return () => {
@@ -307,7 +314,6 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
 
     const handleVoiceActivity = (data: any) => {
       const { userId, isSpeaking } = data;
-      console.log(`🔊 Received voice activity from ${userId}: ${isSpeaking ? 'speaking' : 'silent'}`);
 
       // تحديث حالة التحدث للمستخدمين الآخرين
       setRoomData(prev => ({
@@ -536,21 +542,33 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
   // تبديل كتم المايك
   const toggleMute = async () => {
     try {
-      const newMutedState = !isMuted;
-      await apiService.toggleMute(newMutedState);
-      setIsMuted(newMutedState);
-      
-      if (webrtcServiceRef.current) {
-        webrtcServiceRef.current.toggleMute(newMutedState);
+      if (!webrtcServiceRef.current) {
+        setError('خدمة الصوت غير متاحة');
+        return;
       }
-      
+
+      const newMutedState = !isMuted;
+
+      // تحديث الحالة المحلية فوراً
+      setIsMuted(newMutedState);
+
+      // تطبيق الكتم في WebRTC فوراً
+      webrtcServiceRef.current.setMute(newMutedState);
+
+      // إشعار المستخدمين الآخرين فوراً
       wsService.send({
         type: 'voice_room_update',
         data: { action: 'mute_toggled', userId: user.id, isMuted: newMutedState }
       });
+
+      // تحديث الخادم في الخلفية (بدون انتظار)
+      apiService.toggleMute(newMutedState).catch(err => {
+        console.warn('Failed to update server mute state:', err);
+      });
+
     } catch (err: any) {
       console.error('Error toggling mute:', err);
-      setError(err.message || 'خطأ في تبديل كتم المايك');
+      setError('خطأ في تبديل كتم المايك');
     }
   };
 
@@ -781,59 +799,7 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
     };
   }, [showGameArea]);
 
-  // اختبار الصوت والمايك
-  const testAudio = async () => {
-    try {
-      setAudioTestMode(true);
 
-      // طلب إذن المايك
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      });
-
-      setAudioPermission('granted');
-
-      // إنشاء AudioContext لقياس مستوى الصوت
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const analyser = audioContext.createAnalyser();
-      const microphone = audioContext.createMediaStreamSource(stream);
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-      microphone.connect(analyser);
-      analyser.fftSize = 256;
-
-      // مراقبة مستوى الصوت
-      const checkAudioLevel = () => {
-        analyser.getByteFrequencyData(dataArray);
-        const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-        setMicLevel(Math.min(100, (average / 128) * 100));
-
-        if (audioTestMode) {
-          requestAnimationFrame(checkAudioLevel);
-        }
-      };
-
-      checkAudioLevel();
-
-      // إيقاف الاختبار بعد 10 ثوان
-      setTimeout(() => {
-        setAudioTestMode(false);
-        stream.getTracks().forEach(track => track.stop());
-        audioContext.close();
-        setMicLevel(0);
-      }, 10000);
-
-    } catch (error) {
-      console.error('Audio test failed:', error);
-      setAudioPermission('denied');
-      setAudioTestMode(false);
-      setError('فشل في الوصول للمايك. تأكد من منح الإذن في المتصفح.');
-    }
-  };
 
   // فحص حالة إذن الصوت عند التحميل
   useEffect(() => {
@@ -1032,36 +998,10 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
                   : 'bg-yellow-500'
             }`}></div>
 
-            {/* مؤشر مستوى الصوت */}
-            <div className="flex items-center gap-1">
-              <Mic className={`w-3 h-3 ${
-                audioTestMode && micLevel > 10
-                  ? 'text-green-400'
-                  : 'text-gray-400'
-              }`} />
-              <div className="w-12 h-1.5 bg-gray-600 rounded-full overflow-hidden">
-                <div
-                  className={`h-full transition-all duration-100 ${
-                    micLevel > 70 ? 'bg-red-500' :
-                    micLevel > 30 ? 'bg-yellow-500' : 'bg-green-500'
-                  }`}
-                  style={{ width: `${micLevel}%` }}
-                ></div>
-              </div>
-            </div>
+
           </div>
 
-          <button
-            onClick={testAudio}
-            disabled={audioTestMode}
-            className={`px-2 py-1 text-xs rounded transition-colors ${
-              audioTestMode
-                ? 'bg-yellow-600 text-white cursor-not-allowed'
-                : 'bg-blue-600 hover:bg-blue-700 text-white'
-            }`}
-          >
-            {audioTestMode ? 'اختبار...' : 'اختبار مايك'}
-          </button>
+
 
           {isInSeat && (
             <button

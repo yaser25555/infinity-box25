@@ -156,17 +156,26 @@ export class WebRTCVoiceService {
   // Toggle mute
   async toggleMute(): Promise<boolean> {
     if (!this.localStream) return false;
-    
+
     const audioTrack = this.localStream.getAudioTracks()[0];
     if (audioTrack) {
       audioTrack.enabled = !audioTrack.enabled;
       this.isMuted = !audioTrack.enabled;
-      
-      console.log(this.isMuted ? '🔇 Muted' : '🔊 Unmuted');
       return this.isMuted;
     }
-    
+
     return false;
+  }
+
+  // Set mute state directly
+  setMute(muted: boolean): void {
+    if (!this.localStream) return;
+
+    const audioTrack = this.localStream.getAudioTracks()[0];
+    if (audioTrack) {
+      audioTrack.enabled = !muted;
+      this.isMuted = muted;
+    }
   }
 
   // Create peer connection for a user
@@ -394,11 +403,6 @@ export class WebRTCVoiceService {
 
           this.lastVoiceActivitySent = now;
           this.isSpeaking = isSpeaking;
-
-          // Only log state changes, not every update
-          if (stateChanged) {
-            console.log('🎤 Voice activity changed:', isSpeaking ? 'speaking' : 'silent', `(level: ${level})`);
-          }
         }
       }
       
