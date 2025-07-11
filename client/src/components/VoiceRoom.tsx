@@ -97,8 +97,6 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
   const loadVoiceRoom = async () => {
     try {
       setIsLoading(true);
-      setError(null); // مسح الأخطاء السابقة
-      
       const [roomResponse, messagesResponse] = await Promise.all([
         apiService.getVoiceRoom(),
         apiService.getVoiceRoomMessages()
@@ -127,16 +125,10 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
       );
       setIsInWaitingQueue(inQueue);
 
+      setError(null);
     } catch (err: any) {
       console.error('Error loading voice room:', err);
       setError(err.message || 'خطأ في تحميل الغرفة الصوتية');
-      
-      // إعادة المحاولة بعد 5 ثوانٍ
-      setTimeout(() => {
-        if (!roomData) {
-          loadVoiceRoom();
-        }
-      }, 5000);
     } finally {
       setIsLoading(false);
     }
@@ -208,10 +200,9 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
         }
       };
 
-      webrtcServiceRef.current.onError = (error: unknown) => {
+      webrtcServiceRef.current.onError = (error: Error) => {
         console.error('❌ WebRTC error:', error);
-        const errorMessage = error instanceof Error ? error.message : 'خطأ غير معروف في الصوت';
-        setError(`خطأ في الصوت: ${errorMessage}`);
+        setError(`خطأ في الصوت: ${error.message}`);
       };
     }
 
@@ -234,56 +225,7 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
     };
 
     const handleVoiceRoomUpdate = (data: any) => {
-      // تحديث البيانات المحلية بدلاً من إعادة تحميل كامل
-      if (data.action === 'seat_joined') {
-        setRoomData(prev => {
-          if (!prev) return prev;
-          const newSeats = [...prev.seats];
-          const seatIndex = newSeats.findIndex(seat => seat.seatNumber === data.seatNumber);
-          if (seatIndex !== -1) {
-            newSeats[seatIndex] = {
-              ...newSeats[seatIndex],
-              user: data.user,
-              userPlayerId: data.userPlayerId,
-              joinedAt: new Date().toISOString()
-            };
-          }
-          return { ...prev, seats: newSeats };
-        });
-      } else if (data.action === 'seat_left') {
-        setRoomData(prev => {
-          if (!prev) return prev;
-          const newSeats = [...prev.seats];
-          const seatIndex = newSeats.findIndex(seat => seat.seatNumber === data.seatNumber);
-          if (seatIndex !== -1) {
-            newSeats[seatIndex] = {
-              ...newSeats[seatIndex],
-              user: null,
-              userPlayerId: null,
-              joinedAt: null
-            };
-          }
-          return { ...prev, seats: newSeats };
-        });
-      } else if (data.action === 'mute_toggled') {
-        setRoomData(prev => {
-          if (!prev) return prev;
-          const newSeats = [...prev.seats];
-          const seatIndex = newSeats.findIndex(seat => 
-            seat.user && seat.user._id === data.userId
-          );
-          if (seatIndex !== -1) {
-            newSeats[seatIndex] = {
-              ...newSeats[seatIndex],
-              isMuted: data.isMuted
-            };
-          }
-          return { ...prev, seats: newSeats };
-        });
-      } else {
-        // إعادة تحميل كامل فقط إذا لم نتمكن من تحديث البيانات محلياً
-        loadVoiceRoom();
-      }
+      loadVoiceRoom(); // إعادة تحميل بيانات الغرفة
 
       // إذا انضم مستخدم جديد للمقعد، ابدأ اتصال WebRTC
       if (data.action === 'seat_joined' && isInSeat && data.userId !== user.id) {
@@ -301,7 +243,7 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
         setVoiceActivity(prev => {
           const newMap = new Map(prev);
           newMap.set(data.userId.toString(), {
-            userId: data.userId.toString(),
+            uid: data.userId.toString(),
             level: data.level,
             isSpeaking: data.isSpeaking
           });
@@ -310,65 +252,26 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
       }
     };
 
-    // معالج التحديثات الإدارية
-    const handleAdminActionUpdate = (data: any) => {
-      const { action, targetUserId, message } = data;
-
-      console.log('🔧 Admin action received:', action, 'for user:', targetUserId);
-
-      // إظهار إشعار للمستخدم المستهدف
-      if (targetUserId === user.id) {
-        setError(message || `تم تطبيق إجراء إداري: ${action}`);
-
-        if (action === 'kick') {
-          // إيقاف WebRTC قبل إعادة التحميل
-          if (webrtcServiceRef.current) {
-            webrtcServiceRef.current.leaveRoom().catch(console.error);
-          }
-          setTimeout(() => {
-            window.location.reload();
-          }, 2000);
-        } else if (action === 'removeSeat' && isInSeat) {
-          // إيقاف WebRTC عند الإزالة من المقعد
-          if (webrtcServiceRef.current) {
-            webrtcServiceRef.current.leaveRoom().catch(console.error);
-          }
-          setIsInSeat(false);
-          setCurrentSeatNumber(null);
-          setIsMuted(false);
-        }
-      }
-
-      // إعادة تحميل البيانات فقط (بدون إعادة تحميل WebRTC)
-      loadVoiceRoom();
-    };
-
-    // إضافة معالجات الرسائل
     wsService.onMessage('voice_room_message', handleVoiceRoomMessage);
     wsService.onMessage('voice_room_update', handleVoiceRoomUpdate);
     wsService.onMessage('voice_activity', handleVoiceActivity);
-    wsService.onMessage('admin_action_update', handleAdminActionUpdate);
 
-    // معالجة إغلاق الصفحة
+    return () => {
+      wsService.offMessage('voice_room_message', handleVoiceRoomMessage);
+      wsService.offMessage('voice_room_update', handleVoiceRoomUpdate);
+      wsService.offMessage('voice_activity', handleVoiceActivity);
+    };
+  }, [wsService, isInSeat, user.id]);
+
+  // تحميل البيانات عند بدء التشغيل
+  useEffect(() => {
+    loadVoiceRoom();
+  }, []);
+
+  // إضافة تحذير عند مغادرة الصفحة إذا كان المستخدم في مقعد
+  useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (isInSeat) {
-        console.log('🚪 Page unloading, user is in seat, preparing to leave...');
-
-        // إرسال إشعار بالمغادرة عبر WebSocket أولاً
-        try {
-          wsService.send({
-            type: 'leave_voice_room',
-            data: { roomId: `voice-room-${roomId}`, userId: user.id }
-          });
-        } catch (error) {
-          console.warn('Failed to send leave message via WebSocket:', error);
-        }
-
-        // إيقاف WebRTC
-        if (webrtcServiceRef.current) {
-          webrtcServiceRef.current.leaveRoom().catch(console.error);
-        }
-
         e.preventDefault();
         e.returnValue = 'أنت حالياً في الغرفة الصوتية. هل تريد المغادرة؟';
         return 'أنت حالياً في الغرفة الصوتية. هل تريد المغادرة؟';
@@ -376,25 +279,11 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
     };
 
     const handleUnload = () => {
+      // إذا غادر المستخدم الصفحة وهو في مقعد، أرسل إشارة مغادرة
       if (isInSeat) {
-        console.log('🚪 Page unloaded, sending beacon to leave seat...');
-
-        const token = localStorage.getItem('token');
-        if (token) {
-          try {
-            // إرسال beacon مع التوكن
-            const formData = new FormData();
-            formData.append('token', token);
-            navigator.sendBeacon('/api/voice-room/leave-seat', formData);
-          } catch (error) {
-            console.warn('Failed to send beacon:', error);
-          }
-        }
-
-        // إيقاف WebRTC
-        if (webrtcServiceRef.current) {
-          webrtcServiceRef.current.leaveRoom().catch(console.error);
-        }
+        navigator.sendBeacon('/api/voice-room/leave-seat', JSON.stringify({
+          userId: user.id
+        }));
       }
     };
 
@@ -402,21 +291,10 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
     window.addEventListener('unload', handleUnload);
 
     return () => {
-      wsService.offMessage('voice_room_message', handleVoiceRoomMessage);
-      wsService.offMessage('voice_room_update', handleVoiceRoomUpdate);
-      wsService.offMessage('voice_activity', handleVoiceActivity);
-      wsService.offMessage('admin_action_update', handleAdminActionUpdate);
       window.removeEventListener('beforeunload', handleBeforeUnload);
       window.removeEventListener('unload', handleUnload);
     };
-  }, [wsService, user.id, isInSeat]);
-
-  // تحميل البيانات عند بدء التشغيل
-  useEffect(() => {
-    loadVoiceRoom();
-  }, []);
-
-
+  }, [isInSeat, user.id]);
 
   // إرسال رسالة نصية
   const sendMessage = async (content: string) => {
@@ -493,11 +371,10 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
           setIsVoiceConnected(true);
           console.log('✅ WebRTC voice chat started successfully');
 
-            } catch (webrtcError: unknown) {
-      console.error('❌ WebRTC initialization failed:', webrtcError);
-      const errorMessage = webrtcError instanceof Error ? webrtcError.message : 'خطأ غير معروف';
-      setError(`فشل في بدء المحادثة الصوتية: ${errorMessage}`);
-    }
+        } catch (webrtcError) {
+          console.error('❌ WebRTC initialization failed:', webrtcError);
+          setError(`فشل في بدء المحادثة الصوتية: ${webrtcError.message}`);
+        }
       }
 
       // حفظ حالة الانضمام للغرفة الصوتية
@@ -521,19 +398,8 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
   };
 
   // مغادرة المقعد
-  const leaveSeat = async (e?: React.MouseEvent) => {
-    // منع السلوك الافتراضي إذا كان الحدث موجود
-    if (e) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-
+  const leaveSeat = async () => {
     try {
-      // التحقق من وجود اتصال WebSocket
-      if (!wsService) {
-        throw new Error('لا يوجد اتصال بالخادم');
-      }
-
       // مغادرة المقعد في قاعدة البيانات
       await apiService.leaveVoiceSeat();
 
@@ -556,55 +422,25 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
         data: { action: 'seat_left', userId: user.id, seatNumber: currentSeatNumber }
       });
 
-      // تحديث الحالة المحلية بدلاً من إعادة تحميل كامل
-      setIsInSeat(false);
-      setCurrentSeatNumber(null);
-      setIsMuted(false);
-      
-      // إعادة تحميل البيانات فقط
       await loadVoiceRoom();
     } catch (err: any) {
       console.error('Error leaving seat:', err);
       setError(err.message || 'خطأ في مغادرة المقعد');
-      
-      // إعادة المحاولة بعد 3 ثوانٍ
-      setTimeout(() => {
-        setError(null);
-      }, 3000);
     }
   };
 
   // تبديل كتم المايك
-  const toggleMute = async (e?: React.MouseEvent) => {
-    // منع السلوك الافتراضي إذا كان الحدث موجود
-    if (e) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-
+  const toggleMute = async () => {
     try {
-      // التحقق من وجود اتصال WebSocket
-      if (!wsService) {
-        throw new Error('لا يوجد اتصال بالخادم');
-      }
-
       if (!webrtcServiceRef.current) {
         throw new Error('خدمة الصوت غير متاحة');
       }
-
-      // طباعة حالة الـ stream للتشخيص
-      const streamStatus = webrtcServiceRef.current.getStreamStatus();
-      console.log('🔍 Stream status before mute toggle:', streamStatus);
 
       // تبديل الكتم في WebRTC
       const newMutedState = await webrtcServiceRef.current.toggleMute();
 
       // تحديث حالة الكتم في الخادم
-      try {
-        await apiService.toggleMute(newMutedState);
-      } catch (serverError) {
-        console.warn('⚠️ Server update failed, continuing with local state:', serverError);
-      }
+      await apiService.toggleMute(newMutedState);
 
       // تحديث حالة الكتم محلياً
       setIsMuted(newMutedState);
@@ -618,24 +454,7 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
       console.log(newMutedState ? '🔇 Muted' : '🔊 Unmuted');
     } catch (err: any) {
       console.error('Error toggling mute:', err);
-
-      // في حالة الخطأ، تبديل الحالة المحلية على الأقل
-      const fallbackState = !isMuted;
-      setIsMuted(fallbackState);
-
-      // إشعار المستخدمين الآخرين بالحالة الجديدة
-      wsService.send({
-        type: 'voice_room_update',
-        data: { action: 'mute_toggled', userId: user.id, isMuted: fallbackState }
-      });
-
-      console.log(`🔄 Fallback mute state: ${fallbackState ? 'muted' : 'unmuted'}`);
-      setError('تم تبديل الكتم محلياً - قد تحتاج لإعادة الانضمام للمقعد');
-
-      // إخفاء الخطأ بعد 3 ثوانٍ
-      setTimeout(() => {
-        setError(null);
-      }, 3000);
+      setError(err.message || 'خطأ في تبديل كتم المايك');
     }
   };
 
@@ -709,7 +528,7 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
             {isInSeat && (
               <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
                 <button
-                  onClick={(e) => toggleMute(e)}
+                  onClick={toggleMute}
                   className={`w-full sm:w-auto p-3 sm:p-2 rounded-lg transition-colors text-sm font-medium ${
                     isMuted
                       ? 'bg-red-600 hover:bg-red-700 text-white'
@@ -724,7 +543,7 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
                 </button>
 
                 <button
-                  onClick={(e) => leaveSeat(e)}
+                  onClick={leaveSeat}
                   className="w-full sm:w-auto px-4 py-3 sm:py-2 bg-red-600 hover:bg-red-700 rounded-lg text-white transition-colors text-sm font-medium"
                 >
                   مغادرة المقعد
@@ -769,7 +588,7 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
         <div className="fixed bottom-0 left-0 right-0 bg-gray-900/95 backdrop-blur-sm border-t border-gray-700 p-4 sm:hidden z-50">
           <div className="flex items-center justify-center gap-4 max-w-md mx-auto">
             <button
-              onClick={(e) => toggleMute(e)}
+              onClick={toggleMute}
               className={`flex-1 flex items-center justify-center gap-2 p-4 rounded-xl transition-all duration-200 font-medium ${
                 isMuted
                   ? 'bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/25'
@@ -782,7 +601,7 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
             </button>
 
             <button
-              onClick={(e) => leaveSeat(e)}
+              onClick={leaveSeat}
               className="flex-1 flex items-center justify-center gap-2 p-4 bg-red-600 hover:bg-red-700 rounded-xl text-white transition-all duration-200 font-medium shadow-lg shadow-red-600/25"
             >
               <span>مغادرة المقعد</span>

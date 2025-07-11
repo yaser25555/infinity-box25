@@ -203,25 +203,7 @@ export class WebSocketService {
 
   // دالة send للتوافق مع الكود الحالي
   send(message: { type: WebSocketMessageType; data?: any }) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      try {
-        const messageWithTimestamp = {
-          ...message,
-          timestamp: Date.now()
-        };
-        this.ws.send(JSON.stringify(messageWithTimestamp));
-      } catch (error) {
-        console.error('Error sending WebSocket message:', error);
-        // إعادة المحاولة بعد ثانية واحدة
-        setTimeout(() => {
-          if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify(message));
-          }
-        }, 1000);
-      }
-    } else {
-      console.warn('WebSocket is not connected. Message not sent:', message);
-    }
+    this.sendMessage(message.type, message.data);
   }
 
   disconnect() {

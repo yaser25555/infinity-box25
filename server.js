@@ -1100,94 +1100,6 @@ const getOrCreateDefaultVoiceRoom = async () => {
   return room;
 };
 
-// دالة إزالة المستخدم من المقعد الصوتي عند قطع الاتصال
-const removeUserFromVoiceSeat = async (userId) => {
-  try {
-    const room = await getOrCreateDefaultVoiceRoom();
-    const user = await User.findById(userId);
-
-    if (!user) {
-      return false;
-    }
-
-    // البحث عن مقعد المستخدم
-    const userSeat = room.seats.find(seat =>
-      seat.user && seat.user.toString() === userId
-    );
-
-    if (!userSeat) {
-      return false; // المستخدم ليس في أي مقعد
-    }
-
-    const seatNumber = userSeat.seatNumber;
-    console.log(`🪑 Removing user ${user.username} from seat ${seatNumber} due to disconnect`);
-
-    // إفراغ المقعد
-    userSeat.user = null;
-    userSeat.userPlayerId = null;
-    userSeat.joinedAt = null;
-    userSeat.isSpeaking = false;
-    userSeat.isMuted = false;
-
-    // إضافة رسالة نظام
-    room.textMessages.push({
-      sender: userId,
-      senderPlayerId: user.playerId,
-      content: `${user.username} غادر المقعد ${seatNumber} (انقطع الاتصال)`,
-      messageType: 'system',
-      timestamp: new Date()
-    });
-
-    // إذا كان هناك أشخاص في قائمة الانتظار، نقل الأول للمقعد
-    if (room.waitingQueue.length > 0) {
-      const nextUser = room.waitingQueue.shift();
-      const nextUserData = await User.findById(nextUser.user);
-
-      if (nextUserData) {
-        userSeat.user = nextUser.user;
-        userSeat.userPlayerId = nextUser.userPlayerId;
-        userSeat.joinedAt = new Date();
-
-        // إضافة رسالة نظام للمستخدم الجديد
-        room.textMessages.push({
-          sender: nextUser.user,
-          senderPlayerId: nextUser.userPlayerId,
-          content: `${nextUserData.username} انضم للمقعد ${seatNumber} من قائمة الانتظار`,
-          messageType: 'system',
-          timestamp: new Date()
-        });
-
-        console.log(`🪑 Moved ${nextUserData.username} from waiting queue to seat ${seatNumber}`);
-      }
-    }
-
-    await room.save();
-
-    // إشعار جميع المستخدمين في الغرفة الصوتية
-    const connectedClientsArray = Array.from(connectedClients.values());
-    const voiceRoomClients = connectedClientsArray.filter(client => client.isInVoiceRoom);
-
-    voiceRoomClients.forEach(client => {
-      if (client.socket.readyState === 1) {
-        client.socket.send(JSON.stringify({
-          type: 'voice_room_update',
-          data: {
-            action: 'seat_left',
-            userId: userId,
-            seatNumber: seatNumber,
-            reason: 'disconnect'
-          }
-        }));
-      }
-    });
-
-    return true;
-  } catch (error) {
-    console.error('Error removing user from voice seat:', error);
-    return false;
-  }
-};
-
 // جلب بيانات الغرفة الصوتية
 app.get('/api/voice-room', authenticateToken, async (req, res) => {
   try {
@@ -4233,29 +4145,8 @@ wss.on('connection', (socket) => {
 
     // إزالة المستخدم من قائمة العملاء المتصلين
     if (currentUserId) {
-      try {
-        // إزالة المستخدم من المقعد الصوتي إذا كان جالساً
-        await removeUserFromVoiceSeat(currentUserId);
-
-        // إشعار المستخدمين الآخرين بمغادرة المستخدم
-        const connectedClientsArray = Array.from(connectedClients.values());
-        const voiceRoomClients = connectedClientsArray.filter(client => client.isInVoiceRoom);
-
-        voiceRoomClients.forEach(client => {
-          if (client.socket.readyState === 1) {
-            client.socket.send(JSON.stringify({
-              type: 'user_left_voice',
-              data: { userId: currentUserId }
-            }));
-          }
-        });
-
-        connectedClients.delete(currentUserId);
-        console.log(`🗑️ Removed user ${currentUserId} from connected clients and voice seat`);
-      } catch (error) {
-        console.error('Error removing user from voice seat on disconnect:', error);
-        connectedClients.delete(currentUserId);
-      }
+      connectedClients.delete(currentUserId);
+      console.log(`🗑️ Removed user ${currentUserId} from connected clients`);
     }
   });
 });

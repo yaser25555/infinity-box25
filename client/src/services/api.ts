@@ -265,89 +265,44 @@ class ApiService {
 
   // مغادرة المقعد الصوتي
   async leaveVoiceSeat() {
-    try {
-      return await this.request('/api/voice-room/leave-seat', {
-        method: 'POST'
-      });
-    } catch (error) {
-      console.error('Error leaving voice seat:', error);
-      // إعادة المحاولة مرة واحدة
-      try {
-        return await this.request('/api/voice-room/leave-seat', {
-          method: 'POST'
-        });
-      } catch (retryError) {
-        throw retryError;
-      }
-    }
+    return this.request('/api/voice-room/leave-seat', {
+      method: 'POST'
+    });
   }
 
   // طلب الانضمام لقائمة انتظار المايك
   async requestMic() {
-    try {
-      return await this.request('/api/voice-room/request-mic', {
-        method: 'POST'
-      });
-    } catch (error) {
-      console.error('Error requesting mic:', error);
-      throw error;
-    }
+    return this.request('/api/voice-room/request-mic', {
+      method: 'POST'
+    });
   }
 
   // إلغاء طلب المايك
   async cancelMicRequest() {
-    try {
-      return await this.request('/api/voice-room/cancel-mic-request', {
-        method: 'POST'
-      });
-    } catch (error) {
-      console.error('Error canceling mic request:', error);
-      throw error;
-    }
+    return this.request('/api/voice-room/cancel-mic-request', {
+      method: 'POST'
+    });
   }
 
   // إرسال رسالة في الغرفة الصوتية
   async sendVoiceRoomMessage(content: string) {
-    try {
-      return await this.request('/api/voice-room/send-message', {
-        method: 'POST',
-        body: JSON.stringify({ content })
-      });
-    } catch (error) {
-      console.error('Error sending voice room message:', error);
-      throw error;
-    }
+    return this.request('/api/voice-room/send-message', {
+      method: 'POST',
+      body: JSON.stringify({ content })
+    });
   }
 
   // جلب رسائل الغرفة الصوتية
   async getVoiceRoomMessages() {
-    try {
-      return await this.request('/api/voice-room/messages');
-    } catch (error) {
-      console.error('Error getting voice room messages:', error);
-      throw error;
-    }
+    return this.request('/api/voice-room/messages');
   }
 
   // تحديث حالة المايك (كتم/إلغاء كتم)
   async toggleMute(isMuted: boolean) {
-    try {
-      return await this.request('/api/voice-room/toggle-mute', {
-        method: 'POST',
-        body: JSON.stringify({ isMuted })
-      });
-    } catch (error) {
-      console.error('Error toggling mute:', error);
-      // إعادة المحاولة مرة واحدة
-      try {
-        return await this.request('/api/voice-room/toggle-mute', {
-          method: 'POST',
-          body: JSON.stringify({ isMuted })
-        });
-      } catch (retryError) {
-        throw retryError;
-      }
-    }
+    return this.request('/api/voice-room/toggle-mute', {
+      method: 'POST',
+      body: JSON.stringify({ isMuted })
+    });
   }
 
   // ========== ADMIN VOICE ROOM METHODS ==========

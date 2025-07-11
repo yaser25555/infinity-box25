@@ -276,17 +276,8 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
     };
 
     const handleVoiceRoomUpdate = (data: any) => {
-      console.log('📢 Voice room update received:', data);
+      loadVoiceRoom();
 
-      // تحديث محلي بدلاً من إعادة تحميل كامل
-      if (data.action && data.userId) {
-        updateLocalRoomData(data.action, data.userId);
-      } else {
-        // إعادة تحميل فقط إذا لم نتمكن من التحديث المحلي
-        loadVoiceRoom();
-      }
-
-      // إرسال عرض WebRTC للمستخدم الجديد
       if (data.action === 'seat_joined' && isInSeat && data.userId !== user.id) {
         setTimeout(() => {
           webrtcServiceRef.current?.sendOffer(data.userId);
@@ -298,9 +289,7 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
     const handleAdminActionUpdate = (data: any) => {
       const { action, targetUserId, adminId, message } = data;
 
-      console.log('🔧 Admin action received:', action, 'for user:', targetUserId);
-
-      // تطبيق التحديث محلياً بدون إعادة تحميل WebRTC
+      // تطبيق التحديث محلياً
       updateLocalRoomData(action, targetUserId);
 
       // إظهار إشعار للمستخدم المستهدف
@@ -309,21 +298,9 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
 
         // إذا تم طرد المستخدم الحالي، إعادة تحميل الصفحة
         if (action === 'kick') {
-          // إيقاف WebRTC قبل إعادة التحميل
-          if (webrtcServiceRef.current) {
-            webrtcServiceRef.current.leaveRoom().catch(console.error);
-          }
           setTimeout(() => {
             window.location.reload();
           }, 2000);
-        } else if (action === 'removeSeat' && isInSeat) {
-          // إيقاف WebRTC عند الإزالة من المقعد
-          if (webrtcServiceRef.current) {
-            webrtcServiceRef.current.leaveRoom().catch(console.error);
-          }
-          setIsInSeat(false);
-          setCurrentSeatNumber(null);
-          setIsMuted(false);
         }
       }
     };
@@ -414,23 +391,6 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (isInSeat) {
-        console.log('🚪 Page unloading, user is in seat, preparing to leave...');
-
-        // إرسال إشعار بالمغادرة عبر WebSocket أولاً
-        try {
-          wsService.send({
-            type: 'leave_voice_room',
-            data: { roomId: `voice-room-${roomId}`, userId: user.id }
-          });
-        } catch (error) {
-          console.warn('Failed to send leave message via WebSocket:', error);
-        }
-
-        // إيقاف WebRTC
-        if (webrtcServiceRef.current) {
-          webrtcServiceRef.current.leaveRoom();
-        }
-
         e.preventDefault();
         e.returnValue = 'أنت حالياً في الغرفة الصوتية. هل تريد المغادرة؟';
         return 'أنت حالياً في الغرفة الصوتية. هل تريد المغادرة؟';
@@ -440,19 +400,9 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
     const handleUnload = () => {
       // إذا غادر المستخدم الصفحة وهو في مقعد، أرسل إشارة مغادرة
       if (isInSeat) {
-        console.log('🚪 Page unloaded, sending beacon to leave seat...');
-
-        const token = localStorage.getItem('token');
-        if (token) {
-          try {
-            // إرسال beacon مع التوكن في الهيدر
-            const formData = new FormData();
-            formData.append('token', token);
-            navigator.sendBeacon('/api/voice-room/leave-seat', formData);
-          } catch (error) {
-            console.warn('Failed to send beacon:', error);
-          }
-        }
+        navigator.sendBeacon('/api/voice-room/leave-seat', JSON.stringify({
+          userId: user.id
+        }));
       }
     };
 
@@ -586,52 +536,21 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
   // تبديل كتم المايك
   const toggleMute = async () => {
     try {
-      if (!webrtcServiceRef.current) {
-        throw new Error('خدمة الصوت غير متاحة');
-      }
-
-      // طباعة حالة الـ stream للتشخيص
-      const streamStatus = webrtcServiceRef.current.getStreamStatus();
-      console.log('🔍 Stream status before mute toggle:', streamStatus);
-
-      // تبديل الكتم في WebRTC أولاً
-      const newMutedState = await webrtcServiceRef.current.toggleMute();
-
-      // تحديث الخادم
-      try {
-        await apiService.toggleMute(newMutedState);
-      } catch (serverError) {
-        console.warn('⚠️ Server update failed, continuing with local state:', serverError);
-      }
-
-      // تحديث الحالة المحلية
+      const newMutedState = !isMuted;
+      await apiService.toggleMute(newMutedState);
       setIsMuted(newMutedState);
-
-      // إشعار المستخدمين الآخرين
+      
+      if (webrtcServiceRef.current) {
+        webrtcServiceRef.current.toggleMute(newMutedState);
+      }
+      
       wsService.send({
         type: 'voice_room_update',
         data: { action: 'mute_toggled', userId: user.id, isMuted: newMutedState }
       });
-
-      console.log(newMutedState ? '🔇 Muted successfully' : '🔊 Unmuted successfully');
     } catch (err: any) {
       console.error('Error toggling mute:', err);
-
-      // في حالة الخطأ، تبديل الحالة المحلية على الأقل
-      const fallbackState = !isMuted;
-      setIsMuted(fallbackState);
-
-      // إشعار المستخدمين الآخرين بالحالة الجديدة
-      wsService.send({
-        type: 'voice_room_update',
-        data: { action: 'mute_toggled', userId: user.id, isMuted: fallbackState }
-      });
-
-      console.log(`🔄 Fallback mute state: ${fallbackState ? 'muted' : 'unmuted'}`);
-      setError('تم تبديل الكتم محلياً - قد تحتاج لإعادة الانضمام للمقعد');
-
-      // إخفاء الخطأ بعد 3 ثوانٍ
-      setTimeout(() => setError(null), 3000);
+      setError(err.message || 'خطأ في تبديل كتم المايك');
     }
   };
 
