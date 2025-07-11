@@ -145,17 +145,72 @@ class GameEconomy {
     }
 
     /**
+     * بدء جلسة لعب جديدة
+     */
+    async startGameSession(gameType) {
+        try {
+            // محاولة استعادة جلسة موجودة
+            if (this.loadGameSession()) {
+                return this.gameSession;
+            }
+
+            // إنشاء جلسة جديدة
+            const token = localStorage.getItem('token');
+            if (!token) {
+                throw new Error('لا يوجد توكن');
+            }
+
+            // جلب الرصيد الحالي
+            const response = await fetch(`${this.BACKEND_URL}/api/users/profile`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error('فشل في جلب بيانات المستخدم');
+            }
+
+            const userData = await response.json();
+            const currentBalance = userData.goldCoins || 0;
+
+            this.gameSession = {
+                sessionId: Date.now().toString(),
+                gameType: gameType,
+                startTime: Date.now(),
+                initialBalance: currentBalance,
+                currentBalance: currentBalance,
+                totalSpent: 0,
+                totalWon: 0,
+                gamesPlayed: 0,
+                maxWinAllowed: Math.min(currentBalance * this.MAX_WIN_PERCENTAGE, 10000)
+            };
+
+            this.saveGameSession();
+            return this.gameSession;
+        } catch (error) {
+            console.error('خطأ في بدء الجلسة:', error);
+            throw error;
+        }
+    }
+
+    /**
      * تحديث رصيد اللاعب
      */
     async updatePlayerBalance(result) {
         try {
             const token = localStorage.getItem('token');
+            if (!token) {
+                console.warn('⚠️ لا يوجد توكن، تخطي تحديث الرصيد');
+                return { success: false, error: 'No token' };
+            }
+
             const balanceChange = result.isWin ? result.winAmount : -(result.lossAmount || 0);
 
-            // التحقق من وجود الجلسة
-            if (!this.gameSession || !this.gameSession.currentBalance) {
-                console.warn('⚠️ جلسة اللعبة غير متاحة، تخطي تحديث الرصيد');
-                return { success: false, error: 'No game session' };
+            // إنشاء جلسة جديدة إذا لم تكن موجودة
+            if (!this.gameSession) {
+                await this.startGameSession(result.gameType || 'unknown');
             }
 
             // تحديث الجلسة المحلية
@@ -163,6 +218,9 @@ class GameEconomy {
             this.gameSession.totalSpent += (result.lossAmount || 0);
             this.gameSession.totalWon += (result.winAmount || 0);
             this.gameSession.gamesPlayed++;
+
+            // حفظ فوري في localStorage
+            this.saveGameSession();
 
             // مزامنة مع قاعدة البيانات
             const response = await fetch(`${this.BACKEND_URL}/api/users/update-balance`, {
@@ -222,6 +280,35 @@ class GameEconomy {
     }
 
     /**
+     * حفظ جلسة اللعب في localStorage
+     */
+    saveGameSession() {
+        if (this.gameSession) {
+            try {
+                localStorage.setItem('gameSession', JSON.stringify(this.gameSession));
+            } catch (error) {
+                console.error('خطأ في حفظ الجلسة:', error);
+            }
+        }
+    }
+
+    /**
+     * استعادة جلسة اللعب من localStorage
+     */
+    loadGameSession() {
+        try {
+            const savedSession = localStorage.getItem('gameSession');
+            if (savedSession) {
+                this.gameSession = JSON.parse(savedSession);
+                return true;
+            }
+        } catch (error) {
+            console.error('خطأ في تحميل الجلسة:', error);
+        }
+        return false;
+    }
+
+    /**
      * إنهاء جلسة اللعب
      */
     async endGameSession() {
@@ -246,6 +333,8 @@ class GameEconomy {
                 body: JSON.stringify(sessionData)
             });
 
+            // مسح الجلسة من localStorage
+            localStorage.removeItem('gameSession');
             this.gameSession = null;
         } catch (error) {
             console.error('خطأ في إنهاء الجلسة:', error);
@@ -298,3 +387,17 @@ class GameEconomy {
 
 // إنشاء مثيل عام للاستخدام
 window.gameEconomy = new GameEconomy();
+
+// حفظ البيانات عند إغلاق الصفحة
+window.addEventListener('beforeunload', () => {
+    if (window.gameEconomy && window.gameEconomy.gameSession) {
+        window.gameEconomy.saveGameSession();
+    }
+});
+
+// حفظ البيانات كل 30 ثانية
+setInterval(() => {
+    if (window.gameEconomy && window.gameEconomy.gameSession) {
+        window.gameEconomy.saveGameSession();
+    }
+}, 30000);

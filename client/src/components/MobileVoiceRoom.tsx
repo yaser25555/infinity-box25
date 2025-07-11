@@ -283,16 +283,15 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
     };
 
     const handleVoiceRoomUpdate = (data: any) => {
-      console.log('📢 Voice room update received:', data);
-
-      // إعادة تحميل كامل لضمان التزامن الصحيح
-      loadVoiceRoom();
-
-      if (data.action === 'seat_joined' && isInSeat && data.userId !== user.id) {
-        setTimeout(() => {
-          webrtcServiceRef.current?.sendOffer(data.userId);
-        }, 1000);
-      }
+      // إعادة تحميل فوري لضمان التزامن
+      loadVoiceRoom().then(() => {
+        // بعد التحميل، إرسال WebRTC offer إذا لزم الأمر
+        if (data.action === 'seat_joined' && isInSeat && data.userId !== user.id) {
+          setTimeout(() => {
+            webrtcServiceRef.current?.sendOffer(data.userId);
+          }, 1000);
+        }
+      });
     };
 
     // معالج التحديثات الإدارية المحسن
@@ -552,7 +551,6 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
       }
 
       const newMutedState = !isMuted;
-      console.log(`🎤 Toggling mute: ${isMuted} -> ${newMutedState}`);
 
       // تطبيق الكتم في WebRTC أولاً
       webrtcServiceRef.current.setMute(newMutedState);
@@ -563,7 +561,6 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
       // تحديث الخادم
       try {
         await apiService.toggleMute(newMutedState);
-        console.log(`✅ Server mute state updated: ${newMutedState}`);
       } catch (serverError) {
         console.warn('Failed to update server mute state:', serverError);
       }
@@ -586,14 +583,11 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
   const toggleSound = () => {
     try {
       const newSoundMuted = !isSoundMuted;
-      console.log(`🔊 Toggling sound: ${isSoundMuted} -> ${newSoundMuted}`);
-
       setIsSoundMuted(newSoundMuted);
 
       // كتم جميع عناصر الصوت البعيدة
       remoteAudiosRef.current.forEach(audio => {
         audio.muted = newSoundMuted;
-        console.log(`🔊 Audio element muted: ${newSoundMuted}`);
       });
 
       // كتم جميع peer connections أيضاً
@@ -603,8 +597,6 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
 
       // حفظ الحالة في localStorage
       localStorage.setItem('soundMuted', newSoundMuted.toString());
-
-      console.log(`✅ Sound ${newSoundMuted ? 'muted' : 'unmuted'} successfully`);
     } catch (error) {
       console.error('Error toggling sound:', error);
       setError('خطأ في تبديل كتم الصوت');

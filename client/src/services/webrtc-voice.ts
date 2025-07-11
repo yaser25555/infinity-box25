@@ -67,26 +67,15 @@ export class WebRTCVoiceService {
   // Join voice room
   async joinRoom(roomId: string, userId: string): Promise<void> {
     try {
-      console.log('🎤 Joining voice room:', roomId, 'as user:', userId);
-      
       this.roomId = roomId;
       this.userId = userId;
-      
-      // Get user media with enhanced echo cancellation
+
+      // Get user media with simple, reliable settings
       this.localStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          autoGainControl: true,
-          sampleRate: 48000,
-          channelCount: 1,
-          // Enhanced echo cancellation settings
-          googEchoCancellation: true,
-          googAutoGainControl: true,
-          googNoiseSuppression: true,
-          googHighpassFilter: true,
-          googTypingNoiseDetection: true,
-          googAudioMirroring: false
+          autoGainControl: true
         },
         video: false
       });
@@ -188,7 +177,6 @@ export class WebRTCVoiceService {
         audioTracks.forEach(track => {
           track.enabled = !muted;
         });
-        console.log(`🔊 Remote audio from ${userId} ${muted ? 'muted' : 'unmuted'}`);
       }
     });
   }
@@ -206,23 +194,15 @@ export class WebRTCVoiceService {
     
     // Handle remote stream
     pc.ontrack = (event) => {
-      console.log('🔊 Received remote stream from:', userId);
       const [remoteStream] = event.streams;
-      
+
       // Play remote audio with echo prevention
       const audio = new Audio();
       audio.srcObject = remoteStream;
-      audio.volume = 0.8; // Reduce volume to prevent feedback
+      audio.volume = 0.8;
       audio.autoplay = true;
+      audio.play().catch(() => {});
 
-      // Prevent echo by ensuring audio doesn't loop back
-      if (audio.setSinkId) {
-        // Use default audio output device
-        audio.setSinkId('default').catch(console.error);
-      }
-
-      audio.play().catch(console.error);
-      
       // Update user
       const user = this.remoteUsers.get(userId) || {
         id: userId,
