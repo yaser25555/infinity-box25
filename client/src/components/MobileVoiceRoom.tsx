@@ -283,7 +283,15 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
     };
 
     const handleVoiceRoomUpdate = (data: any) => {
-      loadVoiceRoom();
+      // تحديث محلي بدلاً من إعادة تحميل كامل لتجنب التحميل المستمر
+      if (data.action && data.userId) {
+        updateLocalRoomData(data.action, data.userId);
+      } else {
+        // إعادة تحميل فقط في حالات محددة
+        if (data.action === 'room_settings_changed' || data.action === 'room_reset') {
+          loadVoiceRoom();
+        }
+      }
 
       if (data.action === 'seat_joined' && isInSeat && data.userId !== user.id) {
         setTimeout(() => {
@@ -463,8 +471,6 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
         type: 'voice_room_update',
         data: { action: 'mic_requested', userId: user.id }
       });
-      
-      await loadVoiceRoom();
     } catch (err: any) {
       console.error('Error requesting mic:', err);
       setError(err.message || 'خطأ في طلب المايك');
@@ -499,8 +505,6 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
         type: 'voice_room_update',
         data: { action: 'seat_joined', userId: user.id, seatNumber }
       });
-
-      await loadVoiceRoom();
     } catch (err: any) {
       console.error('Error joining seat:', err);
       setError(err.message || 'خطأ في الانضمام للمقعد');
@@ -531,8 +535,6 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
         type: 'voice_room_update',
         data: { action: 'seat_left', userId: user.id, seatNumber: currentSeatNumber }
       });
-
-      await loadVoiceRoom();
     } catch (err: any) {
       console.error('Error leaving seat:', err);
       setError(err.message || 'خطأ في مغادرة المقعد');
@@ -1604,46 +1606,7 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
         </div>
       )}
 
-      {/* شريط التحكم الثابت في أسفل الشاشة للهواتف */}
-      {isInSeat && (
-        <div className="fixed bottom-0 left-0 right-0 bg-gray-900/95 backdrop-blur-sm border-t border-gray-700 p-4 z-50 sm:hidden">
-          <div className="flex items-center justify-center gap-3 max-w-md mx-auto">
-            <button
-              onClick={toggleMute}
-              className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl transition-all duration-200 font-medium ${
-                isMuted
-                  ? 'bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/25'
-                  : 'bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-600/25'
-              }`}
-              title={isMuted ? 'إلغاء كتم المايك' : 'كتم المايك'}
-            >
-              {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-              <span className="text-sm">{isMuted ? 'إلغاء كتم' : 'كتم'}</span>
-            </button>
 
-            <button
-              onClick={toggleSound}
-              className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-xl transition-all duration-200 font-medium ${
-                isSoundMuted
-                  ? 'bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/25'
-                  : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/25'
-              }`}
-              title={isSoundMuted ? 'إلغاء كتم الصوت' : 'كتم الصوت'}
-            >
-              {isSoundMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-              <span className="text-sm">{isSoundMuted ? 'إلغاء كتم' : 'كتم'}</span>
-            </button>
-
-            <button
-              onClick={leaveSeat}
-              className="px-4 py-3 bg-red-600 hover:bg-red-700 rounded-xl text-white transition-all duration-200 font-medium shadow-lg shadow-red-600/25"
-              title="مغادرة المقعد"
-            >
-              <span className="text-sm">مغادرة</span>
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

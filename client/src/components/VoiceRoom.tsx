@@ -225,7 +225,17 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
     };
 
     const handleVoiceRoomUpdate = (data: any) => {
-      loadVoiceRoom(); // إعادة تحميل بيانات الغرفة
+      // تحديث محلي بدلاً من إعادة تحميل كامل لتجنب التحميل المستمر
+      if (data.action && data.userId) {
+        // تحديث محلي للبيانات بدلاً من إعادة تحميل كامل
+        if (data.action === 'seat_joined' || data.action === 'seat_left' || data.action === 'mute_toggled') {
+          // سيتم التحديث عبر WebSocket messages الأخرى
+        } else {
+          loadVoiceRoom(); // إعادة تحميل فقط في حالات محددة
+        }
+      } else {
+        loadVoiceRoom(); // إعادة تحميل في حالة عدم وجود action محدد
+      }
 
       // إذا انضم مستخدم جديد للمقعد، ابدأ اتصال WebRTC
       if (data.action === 'seat_joined' && isInSeat && data.userId !== user.id) {
@@ -635,32 +645,7 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
         </div>
       </div>
 
-      {/* شريط أزرار التحكم الثابت للهواتف المحمولة */}
-      {isInSeat && (
-        <div className="fixed bottom-0 left-0 right-0 bg-gray-900/95 backdrop-blur-sm border-t border-gray-700 p-4 sm:hidden z-50">
-          <div className="flex items-center justify-center gap-4 max-w-md mx-auto">
-            <button
-              onClick={toggleMute}
-              className={`flex-1 flex items-center justify-center gap-2 p-4 rounded-xl transition-all duration-200 font-medium ${
-                isMuted
-                  ? 'bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/25'
-                  : 'bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-600/25'
-              }`}
-              title={isMuted ? 'إلغاء كتم المايك' : 'كتم المايك'}
-            >
-              {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-              <span>{isMuted ? 'إلغاء الكتم' : 'كتم المايك'}</span>
-            </button>
 
-            <button
-              onClick={leaveSeat}
-              className="flex-1 flex items-center justify-center gap-2 p-4 bg-red-600 hover:bg-red-700 rounded-xl text-white transition-all duration-200 font-medium shadow-lg shadow-red-600/25"
-            >
-              <span>مغادرة المقعد</span>
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
