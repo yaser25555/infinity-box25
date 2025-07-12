@@ -107,6 +107,7 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
   const [roomData, setRoomData] = useState<VoiceRoomData | null>(null);
   const [messages, setMessages] = useState<VoiceMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false); // للتحديثات الخلفية
   const [error, setError] = useState<string | null>(null);
   const [isInSeat, setIsInSeat] = useState(false);
   const [currentSeatNumber, setCurrentSeatNumber] = useState<number | null>(null);
@@ -148,10 +149,15 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // تحميل بيانات الغرفة الصوتية
-  const loadVoiceRoom = async () => {
+  // تحميل بيانات الغرفة الصوتية (التحميل الأولي فقط)
+  const loadVoiceRoom = async (isInitialLoad = false) => {
     try {
-      setIsLoading(true);
+      if (isInitialLoad) {
+        setIsLoading(true);
+      } else {
+        setIsRefreshing(true);
+      }
+
       const [roomResponse, messagesResponse] = await Promise.all([
         apiService.getVoiceRoom(),
         apiService.getVoiceRoomMessages()
@@ -220,6 +226,7 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
       setError(err.message || 'خطأ في تحميل الغرفة الصوتية');
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
   };
 
@@ -299,8 +306,8 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
     };
 
     const handleVoiceRoomUpdate = (data: any) => {
-      // إعادة تحميل فوري لضمان التزامن
-      loadVoiceRoom().then(() => {
+      // إعادة تحميل في الخلفية لضمان التزامن
+      loadVoiceRoom(false).then(() => {
         // بعد التحميل، إرسال WebRTC offer إذا لزم الأمر
         if (data.action === 'seat_joined' && isInSeat && data.userId !== user.id) {
           setTimeout(() => {
@@ -363,7 +370,7 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
 
   // تحميل البيانات عند بدء التشغيل
   useEffect(() => {
-    loadVoiceRoom();
+    loadVoiceRoom(true); // التحميل الأولي
     // تسجيل دور المستخدم للتشخيص
     console.log('User role:', user.role);
     console.log('User isAdmin:', user.isAdmin);
@@ -960,6 +967,10 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
             </div>
           </div>
           <div className="flex items-center gap-1 text-xs">
+            {/* مؤشر التحديث في الخلفية */}
+            {isRefreshing && (
+              <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse mr-1"></div>
+            )}
             <Users className="w-3 h-3 text-gray-400" />
             <span className="text-gray-300">
               {(roomData.seats?.filter(seat => seat.user).length || 0)}/5
