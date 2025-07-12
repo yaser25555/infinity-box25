@@ -1,24 +1,17 @@
 services:
   - type: web
-    name: infinitybox25-enhanced
+    name: infinitybox25-agora
     env: docker
-    plan: starter  # أو free حسب احتياجاتك
+    plan: free
     region: oregon
     branch: main
-    dockerfilePath: ./Dockerfile
-    healthCheckPath: /health
+    healthCheckPath: /
     healthCheckTimeout: 300
-    autoDeploy: true
-
-    # إعدادات الأداء المحسنة
-    numInstances: 1
-
-    # متغيرات البيئة المطلوبة
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
-        value: 3000
+        value: 5000
       - key: MONGODB_URI
         sync: false
       - key: JWT_SECRET
@@ -29,38 +22,5 @@ services:
         sync: false
       - key: AGORA_APP_CERTIFICATE
         sync: false
-
-      # متغيرات جديدة للتحسينات
-      - key: ENABLE_ANALYTICS
-        value: true
-      - key: ENABLE_BACKUP
-        value: true
-      - key: ENABLE_CACHE
-        value: true
-      - key: CACHE_TTL
-        value: 300000
-      - key: BACKUP_INTERVAL
-        value: 21600000
-      - key: MAX_BACKUP_COUNT
-        value: 24
-
-      # إعدادات الأمان
-      - key: RATE_LIMIT_WINDOW
-        value: 60000
-      - key: RATE_LIMIT_MAX
-        value: 100
-      - key: ENABLE_SECURITY
-        value: true
-
-      # إعدادات WebSocket
-      - key: WS_HEARTBEAT_INTERVAL
-        value: 30000
-      - key: WS_TIMEOUT
-        value: 60000
-
-    # أوامر البناء والتشغيل
-    dockerCommand: node server.js
-
-    # إعدادات الشبكة
-    domains:
-      - infinitybox25.onrender.com
+    buildCommand: npm install && npm run build
+    startCommand: node --max-old-space-size=512 server.js

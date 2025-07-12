@@ -189,21 +189,7 @@ export class WebRTCVoiceService {
 
   // Create peer connection for a user
   private async createPeerConnection(userId: string): Promise<RTCPeerConnection> {
-    const configuration: RTCConfiguration = {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:stun3.l.google.com:19302' },
-        { urls: 'stun:stun4.l.google.com:19302' }
-      ],
-      iceCandidatePoolSize: 10,
-      iceTransportPolicy: 'all',
-      bundlePolicy: 'max-bundle',
-      rtcpMuxPolicy: 'require'
-    };
-
-    const pc = new RTCPeerConnection(configuration);
+    const pc = new RTCPeerConnection({ iceServers: this.iceServers });
     
     // Add local stream
     if (this.localStream) {
@@ -275,37 +261,11 @@ export class WebRTCVoiceService {
       }
     };
 
-    // معالج حالة ICE مع إعادة الاتصال
+    // معالج حالة ICE
     pc.oniceconnectionstatechange = () => {
       console.log(`🧊 ICE state with ${userId}: ${pc.iceConnectionState}`);
-
-      switch (pc.iceConnectionState) {
-        case 'connected':
-        case 'completed':
-          console.log(`🎉 ICE connection established with ${userId}`);
-          // إعادة تعيين عداد المحاولات عند نجاح الاتصال
-          this.connectionAttempts.delete(userId);
-          break;
-
-        case 'disconnected':
-          console.log(`⚠️ ICE connection disconnected with ${userId}, attempting to reconnect...`);
-          // محاولة إعادة الاتصال بعد تأخير قصير
-          setTimeout(() => {
-            if (pc.iceConnectionState === 'disconnected') {
-              this.attemptReconnection(userId);
-            }
-          }, 2000);
-          break;
-
-        case 'failed':
-          console.log(`❌ ICE connection failed with ${userId}`);
-          this.handleConnectionFailure(userId);
-          break;
-
-        case 'closed':
-          console.log(`🔒 ICE connection closed with ${userId}`);
-          this.cleanupConnection(userId);
-          break;
+      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        console.log(`🎉 ICE connection established with ${userId}`);
       }
     };
 
@@ -664,60 +624,17 @@ export class WebRTCVoiceService {
     this.peerConnections.forEach((pc, userId) => {
       if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
         console.log('🔄 Retrying connection with:', userId);
-        this.attemptReconnection(userId);
+        this.peerConnections.delete(userId);
+        this.processingOffers.delete(userId);
+
+        // إعادة المحاولة بعد تأخير قصير
+        setTimeout(() => {
+          if (this.userId! < userId) {
+            this.handleUserJoined({ userId });
+          }
+        }, 1000);
       }
     });
-  }
-
-  // محاولة إعادة الاتصال مع مستخدم
-  private attemptReconnection(userId: string) {
-    const attempts = this.connectionAttempts.get(userId) || 0;
-    const maxAttempts = 3;
-
-    if (attempts >= maxAttempts) {
-      console.log(`❌ Max reconnection attempts reached for ${userId}`);
-      this.handleConnectionFailure(userId);
-      return;
-    }
-
-    console.log(`🔄 Reconnection attempt ${attempts + 1}/${maxAttempts} for ${userId}`);
-    this.connectionAttempts.set(userId, attempts + 1);
-
-    // تنظيف الاتصال القديم
-    this.cleanupConnection(userId);
-
-    // إعادة المحاولة بعد تأخير متزايد
-    const delay = Math.min(1000 * Math.pow(2, attempts), 10000); // Exponential backoff
-    setTimeout(() => {
-      if (this.userId! < userId) {
-        this.handleUserJoined({ userId });
-      }
-    }, delay);
-  }
-
-  // معالجة فشل الاتصال النهائي
-  private handleConnectionFailure(userId: string) {
-    console.log(`💔 Connection permanently failed with ${userId}`);
-    this.cleanupConnection(userId);
-  }
-
-  // تنظيف اتصال مستخدم
-  private cleanupConnection(userId: string) {
-    const pc = this.peerConnections.get(userId);
-    if (pc) {
-      pc.close();
-      this.peerConnections.delete(userId);
-    }
-
-    this.processingOffers.delete(userId);
-    this.connectionAttempts.delete(userId);
-    this.remoteUsers.delete(userId);
-
-    // إزالة عنصر الصوت
-    const audioElement = document.getElementById(`remote-audio-${userId}`) as HTMLAudioElement;
-    if (audioElement) {
-      audioElement.remove();
-    }
   }
 
   // بدء مراقبة الاتصالات

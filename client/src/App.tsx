@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import AuthPage from './components/AuthPage';
 import MainDashboard from './components/MainDashboard';
+import PWAInstallButton from './components/PWAInstallButton';
 import { WebSocketService } from './services/websocket';
 import { apiService } from './services/api';
 import { User } from './types';
@@ -12,11 +13,6 @@ function App() {
   const [wsService] = useState(() => new WebSocketService(`ws${window.location.protocol === 'https:' ? 's' : ''}://${window.location.host}/ws`));
 
   useEffect(() => {
-    // Clear any old activeTab data
-    localStorage.removeItem('activeTab');
-
-
-
     const token = localStorage.getItem('token');
     console.log('🔍 App: Checking token:', token ? 'Token exists' : 'No token found');
 
@@ -28,11 +24,15 @@ function App() {
           if (user && typeof user === 'object') {
             // استخدام isAdmin من بيانات الخادم، وليس من localStorage
             setUserData(user as User);
-            // تحديث localStorage بالقيمة الصحيحة من الخادم
+
+            // حفظ البيانات في localStorage للحفاظ على الجلسة
+            localStorage.setItem('username', (user as any).username || '');
             localStorage.setItem('isAdmin', (user as any).isAdmin ? 'true' : 'false');
+            localStorage.setItem('userId', (user as any).id || (user as any)._id || '');
           } else {
             const isAdmin = localStorage.getItem('isAdmin') === 'true';
-            setUserData({ id: '', username: '', isAdmin } as User);
+            const username = localStorage.getItem('username') || '';
+            setUserData({ id: '', username, isAdmin } as User);
           }
           console.log('🔓 App: Setting authenticated to true');
           setIsAuthenticated(true);
@@ -48,16 +48,52 @@ function App() {
         })
         .catch((error) => {
           console.log('❌ App: Error getting user:', error);
-          // Check if logged in from another device
-          if (error.message.includes('MULTIPLE_LOGIN')) {
-            alert('تم تسجيل الدخول من جهاز آخر. سيتم تسجيل خروجك من هذا الجهاز.');
+
+          // فقط في حالات معينة نقوم بتسجيل الخروج
+          if (error.message && (
+              error.message.includes('MULTIPLE_LOGIN') ||
+              error.message.includes('Invalid token') ||
+              error.message.includes('Token expired') ||
+              error.message.includes('Unauthorized')
+            ) || error.status === 401) {
+
+            console.log('🔒 App: Invalid token, logging out');
+            if (error.message && error.message.includes('MULTIPLE_LOGIN')) {
+              alert('تم تسجيل الدخول من جهاز آخر. سيتم تسجيل خروجك من هذا الجهاز.');
+            }
+
+            setIsAuthenticated(false);
+            setUserData(null);
+            localStorage.removeItem('token');
+            localStorage.removeItem('username');
+            localStorage.removeItem('isAdmin');
+          } else {
+            // في حالة أخطاء الشبكة أو أخطاء مؤقتة، نحافظ على تسجيل الدخول
+            console.log('⚠️ App: Network error, keeping user logged in');
+
+            // محاولة استخدام البيانات المحفوظة محلياً
+            const savedUsername = localStorage.getItem('username');
+            const savedIsAdmin = localStorage.getItem('isAdmin') === 'true';
+
+            if (savedUsername) {
+              setUserData({
+                id: '',
+                username: savedUsername,
+                isAdmin: savedIsAdmin
+              } as User);
+              setIsAuthenticated(true);
+
+              // محاولة الاتصال بـ WebSocket
+              wsService.connect(token).catch((wsError: any) => {
+                console.warn('⚠️ WebSocket connection failed:', wsError);
+              });
+            } else {
+              // إذا لم توجد بيانات محفوظة، نسجل الخروج
+              setIsAuthenticated(false);
+              setUserData(null);
+              localStorage.removeItem('token');
+            }
           }
-          console.log('🔒 App: Setting authenticated to false');
-          setIsAuthenticated(false);
-          setUserData(null);
-          localStorage.removeItem('token');
-          localStorage.removeItem('username');
-          localStorage.removeItem('isAdmin');
         })
         .finally(() => {
           console.log('⏹️ App: Loading finished');
@@ -70,25 +106,48 @@ function App() {
   }, []);
 
   const handleAuthSuccess = async (userData: any) => {
+    console.log('🎉 App: Authentication successful, user data:', userData);
+
     setUserData(userData);
     setIsAuthenticated(true);
+
+    // حفظ البيانات في localStorage للحفاظ على الجلسة عند تحديث الصفحة
+    if (userData) {
+      localStorage.setItem('username', userData.username || '');
+      localStorage.setItem('isAdmin', userData.isAdmin ? 'true' : 'false');
+      localStorage.setItem('userId', userData.id || userData._id || '');
+    }
+
     try {
       const token = localStorage.getItem('token');
       if (token) {
         await wsService.connect(token);
+        console.log('✅ WebSocket connected after authentication');
       }
     } catch (error) {
-      console.error('Failed to connect to WebSocket:', error);
+      console.error('❌ Failed to connect to WebSocket after authentication:', error);
     }
   };
 
   const handleLogout = () => {
+    console.log('👋 App: User logging out');
+
+    // حذف جميع البيانات المحفوظة عند الخروج الفعلي
     localStorage.removeItem('token');
     localStorage.removeItem('username');
     localStorage.removeItem('isAdmin');
+    localStorage.removeItem('userId');
+    localStorage.removeItem('activeTab'); // حذف التبويب فقط عند الخروج الفعلي
+    localStorage.removeItem('isInVoiceRoom');
+
+    // قطع اتصال WebSocket
     wsService.disconnect();
+
+    // إعادة تعيين الحالة
     setIsAuthenticated(false);
     setUserData(null);
+
+    console.log('✅ App: Logout completed');
   };
 
   const handleUpdateProfile = (updatedData: any) => {
@@ -115,7 +174,12 @@ function App() {
   }
 
   console.log('🏠 App: Showing MainDashboard (authenticated)');
-  return userData ? <MainDashboard user={userData} onLogout={handleLogout} wsService={wsService} /> : null;
+  return (
+    <>
+      {userData ? <MainDashboard user={userData} onLogout={handleLogout} wsService={wsService} /> : null}
+      <PWAInstallButton />
+    </>
+  );
 }
 
 export default App;
