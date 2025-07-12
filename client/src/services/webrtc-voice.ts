@@ -228,25 +228,41 @@ export class WebRTCVoiceService {
     try {
       const { offer, fromUserId } = data;
       console.log('📥 Received offer from:', fromUserId);
+
+      // التحقق من وجود اتصال موجود
+      const existingPc = this.peerConnections.get(fromUserId);
+      if (existingPc && existingPc.signalingState !== 'closed') {
+        console.log('🔄 Closing existing connection before creating new one');
+        existingPc.close();
+        this.peerConnections.delete(fromUserId);
+      }
+
       console.log('🔄 Creating peer connection and answer for:', fromUserId);
-
       const pc = await this.createPeerConnection(fromUserId);
-      await pc.setRemoteDescription(offer);
-      console.log('✅ Set remote description (offer)');
 
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      console.log('✅ Created and set local description (answer)');
+      try {
+        await pc.setRemoteDescription(offer);
+        console.log('✅ Set remote description (offer)');
 
-      console.log('📤 Sending WebRTC answer to:', fromUserId);
-      this.wsService.send({
-        type: 'webrtc_answer',
-        data: {
-          answer,
-          targetUserId: fromUserId,
-          fromUserId: this.userId
-        }
-      });
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        console.log('✅ Created and set local description (answer)');
+
+        console.log('📤 Sending WebRTC answer to:', fromUserId);
+        this.wsService.send({
+          type: 'webrtc_answer',
+          data: {
+            answer,
+            targetUserId: fromUserId,
+            fromUserId: this.userId
+          }
+        });
+      } catch (sdpError) {
+        console.error('❌ SDP error in offer handling:', sdpError);
+        // تنظيف الاتصال المعطل
+        pc.close();
+        this.peerConnections.delete(fromUserId);
+      }
 
     } catch (error) {
       console.error('❌ Error handling offer:', error);
@@ -260,14 +276,29 @@ export class WebRTCVoiceService {
       console.log('📥 Received answer from:', fromUserId);
 
       const pc = this.peerConnections.get(fromUserId);
-      if (pc && pc.signalingState === 'have-local-offer') {
-        await pc.setRemoteDescription(answer);
-        console.log('✅ Set remote description (answer) for:', fromUserId);
-        console.log('🔗 WebRTC connection should be established with:', fromUserId);
-      } else if (pc) {
-        console.warn('⚠️ Peer connection not in correct state for answer:', pc.signalingState);
-      } else {
+      if (!pc) {
         console.warn('⚠️ No peer connection found for:', fromUserId);
+        return;
+      }
+
+      // التحقق من حالة الاتصال قبل تطبيق الإجابة
+      if (pc.signalingState === 'have-local-offer') {
+        try {
+          await pc.setRemoteDescription(answer);
+          console.log('✅ Set remote description (answer) for:', fromUserId);
+          console.log('🔗 WebRTC connection should be established with:', fromUserId);
+        } catch (sdpError) {
+          console.warn('⚠️ SDP error, recreating connection:', sdpError.message);
+          // إعادة إنشاء الاتصال في حالة خطأ SDP
+          this.peerConnections.delete(fromUserId);
+          setTimeout(() => {
+            this.handleUserJoined({ userId: fromUserId });
+          }, 1000);
+        }
+      } else if (pc.signalingState === 'stable') {
+        console.log('ℹ️ Connection already stable with:', fromUserId);
+      } else {
+        console.warn('⚠️ Peer connection not in correct state for answer:', pc.signalingState);
       }
 
     } catch (error) {
@@ -303,22 +334,33 @@ export class WebRTCVoiceService {
       if (userId === this.userId) return; // Skip self
 
       console.log('👤 User joined voice room:', userId);
-      console.log('🔄 Creating peer connection and offer for:', userId);
 
-      // Create offer for new user
-      const pc = await this.createPeerConnection(userId);
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
+      // تجنب التضارب: فقط المستخدم ذو الـ ID الأصغر يرسل offer
+      // هذا يمنع إرسال offers متبادلة في نفس الوقت
+      const shouldSendOffer = this.userId! < userId;
 
-      console.log('📤 Sending WebRTC offer to:', userId);
-      this.wsService.send({
-        type: 'webrtc_offer',
-        data: {
-          offer,
-          targetUserId: userId,
-          fromUserId: this.userId
-        }
-      });
+      if (shouldSendOffer) {
+        console.log('🔄 Creating peer connection and offer for:', userId);
+
+        // Create offer for new user
+        const pc = await this.createPeerConnection(userId);
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        console.log('📤 Sending WebRTC offer to:', userId);
+        this.wsService.send({
+          type: 'webrtc_offer',
+          data: {
+            offer,
+            targetUserId: userId,
+            fromUserId: this.userId
+          }
+        });
+      } else {
+        console.log('⏳ Waiting for offer from:', userId);
+        // إنشاء peer connection فقط، بدون إرسال offer
+        await this.createPeerConnection(userId);
+      }
 
     } catch (error) {
       console.error('❌ Error handling user joined:', error);
