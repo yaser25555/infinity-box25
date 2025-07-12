@@ -119,8 +119,24 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
   const [showKickModal, setShowKickModal] = useState<string | null>(null);
   const [kickDuration, setKickDuration] = useState('30'); // بالدقائق
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [selectedTextColor, setSelectedTextColor] = useState('#ffffff');
   const [textSuggestions, setTextSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // ألوان المحادثة المتاحة
+  const chatColors = [
+    { name: 'أبيض', value: '#ffffff' },
+    { name: 'أحمر', value: '#ef4444' },
+    { name: 'أزرق', value: '#3b82f6' },
+    { name: 'أخضر', value: '#10b981' },
+    { name: 'أصفر', value: '#f59e0b' },
+    { name: 'بنفسجي', value: '#8b5cf6' },
+    { name: 'وردي', value: '#ec4899' },
+    { name: 'برتقالي', value: '#f97316' },
+    { name: 'سماوي', value: '#06b6d4' },
+    { name: 'ذهبي', value: '#eab308' }
+  ];
   const [currentGame, setCurrentGame] = useState<string | null>(null);
   const [showGameArea, setShowGameArea] = useState(false);
   const [audioPermission, setAudioPermission] = useState<'granted' | 'denied' | 'prompt'>('prompt');
@@ -389,11 +405,14 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
       if (showEmojiPicker) {
         setShowEmojiPicker(false);
       }
+      if (showColorPicker) {
+        setShowColorPicker(false);
+      }
     };
 
     document.addEventListener('click', handleClickOutside);
     return () => document.removeEventListener('click', handleClickOutside);
-  }, [showAdminMenu, showEmojiPicker]);
+  }, [showAdminMenu, showEmojiPicker, showColorPicker]);
 
   // إضافة تحذير عند مغادرة الصفحة إذا كان المستخدم في مقعد
   useEffect(() => {
@@ -440,14 +459,15 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
         },
         content: content,
         timestamp: new Date().toISOString(),
-        messageType: 'text'
+        messageType: 'text',
+        textColor: selectedTextColor // إضافة لون النص
       };
 
       setMessages(prev => [...prev, newMessage]);
 
       wsService.send({
         type: 'voice_room_message',
-        data: response.messageData
+        data: { ...response.messageData, textColor: selectedTextColor }
       });
     } catch (err: any) {
       console.error('Error sending message:', err);
@@ -920,66 +940,72 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
   }
 
   return (
-    <div className="h-full flex flex-col bg-gradient-to-br from-gray-900/50 to-purple-900/30">
-      {/* Header */}
-      <div className="p-3 border-b border-purple-500/20">
+    <div className="h-screen flex flex-col bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 text-white overflow-hidden">
+      {/* Header - مضغوط ومحسن */}
+      <div className="bg-black/30 backdrop-blur-sm border-b border-white/10 p-2 flex-shrink-0">
         <div className="flex items-center justify-between">
-          <h1 className="text-sm font-bold text-white flex items-center gap-2">
-            <Volume2 className="w-4 h-4 text-purple-400" />
-            INFINITY ROOM
-          </h1>
-
-          <div className="flex items-center gap-2 text-xs text-gray-300">
-            <Users className="w-3 h-3" />
-            <span>
-              {(roomData.seats?.filter(seat => seat.user).length || 0) + (roomData.listeners?.length || 0)}/{roomData.maxUsers || 100}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onBack}
+              className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+            <div>
+              <h1 className="text-sm font-bold flex items-center gap-1">
+                <Volume2 className="w-3 h-3 text-purple-400" />
+                INFINITY ROOM
+              </h1>
+              <p className="text-xs text-gray-300">غرفة صوتية للمحادثة</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1 text-xs">
+            <Users className="w-3 h-3 text-gray-400" />
+            <span className="text-gray-300">
+              {(roomData.seats?.filter(seat => seat.user).length || 0)}/5
             </span>
-            <span className="text-gray-500">
-              (🎤 {roomData.seats?.filter(seat => seat.user).length || 0}/5)
-            </span>
-            {/* مؤشر الأدمن للاختبار */}
             {(user.role === 'admin' || user.isAdmin) && (
-              <span className="bg-red-600 text-white px-2 py-1 rounded text-xs">ADMIN</span>
+              <span className="bg-red-600 text-white px-1.5 py-0.5 rounded text-xs ml-1">ADMIN</span>
             )}
           </div>
         </div>
 
-        {/* Control Buttons - تظهر عندما يكون المستخدم في مقعد */}
+        {/* Control Buttons - مضغوطة ومحسنة */}
         {isInSeat && (
-          <div className="bg-gray-800/50 rounded-lg p-3 mb-3">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              <span className="text-xs text-green-400 font-medium">متصل - مقعد {currentSeatNumber}</span>
+          <div className="bg-black/20 backdrop-blur-sm rounded-lg p-2 mt-2">
+            <div className="flex items-center gap-1 mb-2">
+              <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
+              <span className="text-xs text-green-400 font-medium">مقعد {currentSeatNumber}</span>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               <button
                 onClick={toggleMute}
-                className={`flex-1 py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-2 font-medium ${
+                className={`flex-1 py-1.5 px-2 rounded-md transition-colors flex items-center justify-center gap-1 text-xs font-medium ${
                   isMuted
-                    ? 'bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/25'
-                    : 'bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-600/25'
+                    ? 'bg-red-600 hover:bg-red-700 text-white'
+                    : 'bg-green-600 hover:bg-green-700 text-white'
                 }`}
               >
-                {isMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-                <span className="text-sm">{isMuted ? 'إلغاء كتم' : 'كتم مايك'}</span>
+                {isMuted ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}
+                <span>{isMuted ? 'إلغاء كتم' : 'كتم'}</span>
               </button>
 
               <button
                 onClick={toggleSound}
-                className={`flex-1 py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-2 font-medium ${
+                className={`flex-1 py-1.5 px-2 rounded-md transition-colors flex items-center justify-center gap-1 text-xs font-medium ${
                   isSoundMuted
-                    ? 'bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/25'
-                    : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/25'
+                    ? 'bg-red-600 hover:bg-red-700 text-white'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'
                 }`}
               >
-                {isSoundMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-                <span className="text-sm">{isSoundMuted ? 'إلغاء كتم' : 'كتم صوت'}</span>
+                {isSoundMuted ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
+                <span>{isSoundMuted ? 'تشغيل' : 'صامت'}</span>
               </button>
 
               <button
                 onClick={leaveSeat}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-white transition-colors text-sm font-medium shadow-lg shadow-red-600/25"
+                className="px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded-md text-white transition-colors text-xs font-medium"
               >
                 مغادرة
               </button>
@@ -1018,24 +1044,24 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
 
       {/* Content - المقاعد والمحادثة في شاشة واحدة */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* المقاعد الصوتية */}
-        <div className="p-3 border-b border-gray-700/50">
-          {/* المقاعد المدورة - صف واحد */}
-          <div className="flex justify-center gap-2 mb-2 overflow-x-auto px-1">
+        {/* المقاعد الصوتية - مضغوطة */}
+        <div className="p-2 border-b border-gray-700/50 flex-shrink-0">
+          {/* المقاعد المدورة - صف واحد مضغوط */}
+          <div className="flex justify-center gap-1.5 mb-1 overflow-x-auto px-1">
             {roomData.seats.map((seat) => (
               <div key={seat.seatNumber} className="flex flex-col items-center flex-shrink-0">
                 {seat.user ? (
                   <div className="relative">
-                    {/* صورة المستخدم مع حدود ملونة */}
-                    <div className={`relative w-14 h-14 rounded-full p-1 ${
+                    {/* صورة المستخدم مع حدود ملونة - حجم أصغر */}
+                    <div className={`relative w-12 h-12 rounded-full p-0.5 ${
                       seat.isSpeaking && !seat.isMuted
-                        ? 'bg-gradient-to-r from-green-400 to-green-500 shadow-lg shadow-green-500/50 animate-pulse'
+                        ? 'bg-gradient-to-r from-green-400 to-green-500 shadow-md shadow-green-500/50 animate-pulse'
                         : seat.user._id === user.id
                           ? 'bg-gradient-to-r from-green-500 to-green-600'
                           : (seat.user.role === 'admin' || seat.user.isAdmin)
-                            ? 'bg-gradient-to-r from-red-500 to-red-600 shadow-lg shadow-red-500/50'
+                            ? 'bg-gradient-to-r from-red-500 to-red-600 shadow-md shadow-red-500/50'
                             : 'bg-gradient-to-r from-blue-500 to-purple-600'
-                    } shadow-lg`}>
+                    } shadow-md`}>
                       <div className="w-full h-full rounded-full overflow-hidden bg-gray-800">
                         {seat.user.profileImage ? (
                           <img
@@ -1371,7 +1397,10 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
                         {formatMessageTime(message.timestamp)}
                       </span>
                     </div>
-                    <div className="text-sm leading-snug">
+                    <div
+                      className="text-sm leading-snug"
+                      style={{ color: message.textColor || '#ffffff' }}
+                    >
                       {message.content}
                     </div>
                   </div>
@@ -1459,6 +1488,40 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
               />
             )}
 
+            {/* منتقي الألوان */}
+            {showColorPicker && (
+              <div className="absolute bottom-full left-0 right-0 mb-2 bg-gray-800/95 backdrop-blur-sm border border-gray-600/50 rounded-lg p-3 shadow-xl">
+                <div className="text-xs text-gray-300 mb-2 font-medium">اختر لون النص:</div>
+                <div className="grid grid-cols-5 gap-2">
+                  {chatColors.map((color) => (
+                    <button
+                      key={color.value}
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setSelectedTextColor(color.value);
+                        setShowColorPicker(false);
+                      }}
+                      className={`w-8 h-8 rounded-full border-2 transition-all hover:scale-110 ${
+                        selectedTextColor === color.value
+                          ? 'border-white shadow-lg'
+                          : 'border-gray-500 hover:border-gray-300'
+                      }`}
+                      style={{ backgroundColor: color.value }}
+                      title={color.name}
+                    >
+                      {selectedTextColor === color.value && (
+                        <div className="w-full h-full rounded-full flex items-center justify-center">
+                          <div className="w-2 h-2 bg-black rounded-full opacity-50"></div>
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <form onSubmit={handleSendMessage} className="flex gap-2">
               <div className="flex-1 relative">
                 <input
@@ -1468,10 +1531,28 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
                   onChange={handleInputChange}
                   placeholder="اكتب رسالتك..."
                   maxLength={500}
-                  className="w-full px-3 py-2 pr-10 bg-gray-800/50 border border-gray-600/50 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-purple-500/50 text-sm"
+                  style={{ color: selectedTextColor }}
+                  className="w-full px-3 py-2 pr-16 bg-gray-800/50 border border-gray-600/50 rounded-lg placeholder-gray-400 focus:outline-none focus:border-purple-500/50 text-sm"
                   onFocus={() => setShowSuggestions(textSuggestions.length > 0)}
                   onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                 />
+
+                {/* زر اختيار اللون */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setShowColorPicker(!showColorPicker);
+                    setShowEmojiPicker(false);
+                  }}
+                  className="absolute left-8 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-purple-400 transition-colors"
+                >
+                  <div
+                    className="w-4 h-4 rounded-full border-2 border-gray-400"
+                    style={{ backgroundColor: selectedTextColor }}
+                  ></div>
+                </button>
 
                 {/* زر الإيموجي */}
                 <button
@@ -1480,6 +1561,7 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
                     e.preventDefault();
                     e.stopPropagation();
                     setShowEmojiPicker(!showEmojiPicker);
+                    setShowColorPicker(false);
                   }}
                   className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-yellow-400 transition-colors"
                 >
