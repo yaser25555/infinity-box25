@@ -19,7 +19,7 @@ RUN addgroup -g 1001 -S nodejs && \
 COPY package*.json ./
 
 # تثبيت dependencies
-RUN npm install --silent
+RUN npm install --silent --no-audit --no-fund
 
 # نسخ ملفات المشروع
 COPY --chown=nextjs:nodejs . .

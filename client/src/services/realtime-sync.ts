@@ -69,6 +69,12 @@ export class RealTimeSyncService {
 
   // بدء حلقة التزامن
   private startSyncLoop() {
+    // التحقق من توفر apiService قبل البدء
+    if (!apiService || typeof apiService.getSyncData !== 'function') {
+      console.warn('⚠️ تم تعطيل التزامن: apiService.getSyncData غير متاح');
+      return;
+    }
+
     this.syncInterval = setInterval(() => {
       if (this.syncState.isOnline) {
         this.syncWithServer();
@@ -171,15 +177,30 @@ export class RealTimeSyncService {
   // التزامن مع الخادم
   private async syncWithServer() {
     try {
+      // التحقق من وجود apiService و getSyncData
+      if (!apiService || typeof apiService.getSyncData !== 'function') {
+        console.warn('⚠️ apiService.getSyncData غير متاح');
+        return;
+      }
+
       const syncData = await apiService.getSyncData(this.syncState.lastSync);
-      
-      if (syncData.hasUpdates) {
+
+      if (syncData && syncData.hasUpdates) {
         this.applySyncUpdates(syncData.updates);
       }
-      
+
       this.syncState.lastSync = new Date();
+      this.syncState.isOnline = true;
     } catch (error) {
       console.error('خطأ في التزامن مع الخادم:', error);
+      this.syncState.isOnline = false;
+
+      // إعادة المحاولة بعد تأخير
+      setTimeout(() => {
+        if (this.isActive) {
+          this.syncWithServer();
+        }
+      }, 5000);
     }
   }
 

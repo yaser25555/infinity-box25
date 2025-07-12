@@ -12,6 +12,7 @@ class GameEconomy {
         this.HOUSE_EDGE = 0.05; // 5% ميزة البيت
         this.playerData = null;
         this.gameSession = null;
+        this.isUpdatingBalance = false; // منع المعاملات المتزامنة
     }
 
     /**
@@ -176,7 +177,7 @@ class GameEconomy {
             const currentBalance = userData.goldCoins || 0;
 
             this.gameSession = {
-                sessionId: Date.now().toString(),
+                sessionId: this.generateSessionId(),
                 gameType: gameType,
                 startTime: Date.now(),
                 initialBalance: currentBalance,
@@ -200,9 +201,18 @@ class GameEconomy {
      */
     async updatePlayerBalance(result) {
         try {
+            // منع المعاملات المتزامنة
+            if (this.isUpdatingBalance) {
+                console.warn('⚠️ معاملة قيد التنفيذ، انتظار...');
+                return { success: false, error: 'Transaction in progress' };
+            }
+
+            this.isUpdatingBalance = true;
+
             const token = localStorage.getItem('token');
             if (!token) {
                 console.warn('⚠️ لا يوجد توكن، تخطي تحديث الرصيد');
+                this.isUpdatingBalance = false;
                 return { success: false, error: 'No token' };
             }
 
@@ -238,11 +248,49 @@ class GameEconomy {
             });
 
             if (!response.ok) {
-                throw new Error('فشل في تحديث الرصيد');
+                // إذا كان 409 Conflict، جرب مع sessionId جديد
+                if (response.status === 409) {
+                    console.warn('⚠️ تضارب في المعاملة، إنشاء sessionId جديد');
+                    this.gameSession.sessionId = this.generateSessionId();
+
+                    // إعادة المحاولة مرة واحدة
+                    const retryResponse = await fetch(`${this.BACKEND_URL}/api/users/update-balance`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            balanceChange: balanceChange,
+                            gameType: this.gameSession.gameType,
+                            sessionId: this.gameSession.sessionId,
+                            gameResult: result
+                        })
+                    });
+
+                    if (!retryResponse.ok) {
+                        const errorData = await retryResponse.json().catch(() => ({}));
+                        throw new Error(errorData.message || 'فشل في تحديث الرصيد بعد إعادة المحاولة');
+                    }
+
+                    const retryData = await retryResponse.json();
+                    this.playerData.coins = retryData.newBalance;
+
+                    return {
+                        success: true,
+                        newBalance: retryData.newBalance,
+                        change: balanceChange
+                    };
+                }
+
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || 'فشل في تحديث الرصيد');
             }
 
             const updatedData = await response.json();
             this.playerData.coins = updatedData.newBalance;
+
+            console.log(`✅ تم تحديث الرصيد بنجاح: ${updatedData.newBalance}`);
 
             return {
                 success: true,
@@ -253,6 +301,9 @@ class GameEconomy {
         } catch (error) {
             console.error('خطأ في تحديث الرصيد:', error);
             throw error;
+        } finally {
+            // تحرير القفل دائماً
+            this.isUpdatingBalance = false;
         }
     }
 
@@ -367,7 +418,13 @@ class GameEconomy {
      * توليد معرف جلسة فريد
      */
     generateSessionId() {
-        return Date.now().toString(36) + Math.random().toString(36).substr(2);
+        // إنشاء معرف فريد مع timestamp + random + user info
+        const timestamp = Date.now().toString(36);
+        const random = Math.random().toString(36).substr(2, 9);
+        const userPart = (this.userData?.id || 'guest').toString().substr(-4);
+        const extra = performance.now().toString(36).substr(2, 4);
+
+        return `${timestamp}-${random}-${userPart}-${extra}`;
     }
 
     /**
