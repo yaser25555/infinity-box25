@@ -39,6 +39,7 @@ import {
 interface MobileVoiceRoomProps {
   user: User;
   wsService: WebSocketService;
+  onBack?: () => void;
 }
 
 interface VoiceSeat {
@@ -103,7 +104,13 @@ interface VoiceMessage {
   messageType: 'text' | 'system' | 'mic_request';
 }
 
-const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) => {
+const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService, onBack }) => {
+  // دالة افتراضية للعودة إذا لم يتم تمريرها
+  const handleBack = onBack || (() => {
+    // يمكن إضافة منطق افتراضي هنا مثل العودة للصفحة الرئيسية
+    window.history.back();
+  });
+
   const [roomData, setRoomData] = useState<VoiceRoomData | null>(null);
   const [messages, setMessages] = useState<VoiceMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -976,7 +983,7 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <button
-              onClick={onBack}
+              onClick={handleBack}
               className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
             >
               <ArrowLeft className="w-4 h-4" />

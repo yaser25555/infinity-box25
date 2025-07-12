@@ -112,7 +112,15 @@ const MobileDashboard: React.FC<MobileDashboardProps> = ({ userData, onLogout, o
       case 'leaderboard':
         return <LeaderboardContent />;
       case 'voice':
-        return wsService ? <MobileVoiceRoom user={currentUserData} wsService={wsService} /> : <div className="p-4 text-center text-red-400">خدمة WebSocket غير متاحة</div>;
+        return wsService ? (
+          <MobileVoiceRoom
+            user={currentUserData}
+            wsService={wsService}
+            onBack={() => navigateToTab('games')}
+          />
+        ) : (
+          <div className="p-4 text-center text-red-400">خدمة WebSocket غير متاحة</div>
+        );
       case 'profile':
         return <MobileProfileCard
           userData={currentUserData}
