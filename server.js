@@ -3968,9 +3968,9 @@ wss.on('connection', (socket) => {
         }
       }
 
-      // النشاط الصوتي (التحدث)
+      // النشاط الصوتي (التحدث) - محسن مع التأثيرات البصرية
       else if (message.type === 'voice_activity') {
-        // بث حالة التحدث لجميع المستخدمين في الغرفة الصوتية
+        // بث حالة التحدث مع جميع البيانات للتأثيرات البصرية
         const voiceRoomClients = Array.from(connectedClients.values()).filter(client =>
           client.isInVoiceRoom && client.userId !== currentUserId
         );
@@ -3981,8 +3981,13 @@ wss.on('connection', (socket) => {
               type: 'voice_activity',
               data: {
                 userId: currentUserId,
+                username: message.data.username,
+                role: message.data.role,
+                isAdmin: message.data.isAdmin,
                 isSpeaking: message.data.isSpeaking,
-                level: message.data.level
+                isMuted: message.data.isMuted,
+                level: message.data.level,
+                seatNumber: message.data.seatNumber
               }
             }));
           }

@@ -270,8 +270,13 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
           type: 'voice_activity',
           data: {
             userId: user.id,
+            username: user.username,
+            role: user.role,
+            isAdmin: user.isAdmin,
             level: data.level,
-            isSpeaking: data.isSpeaking
+            isSpeaking: data.isSpeaking,
+            isMuted: isMuted,
+            seatNumber: currentSeatNumber
           }
         });
       }
@@ -285,15 +290,16 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
   // إعداد WebSocket listeners
   useEffect(() => {
     const handleVoiceRoomMessage = (data: any) => {
-      // التأكد من أن الرسالة تحتوي على بيانات المرسل الكاملة
+      // التأكد من أن الرسالة تحتوي على بيانات المرسل الكاملة والتأثيرات البصرية
       const messageWithFullSender = {
         ...data,
         sender: {
           ...data.sender,
-          role: data.sender.role || (data.sender.isAdmin ? 'admin' : 'member'),
-          isAdmin: data.sender.isAdmin || false,
-          gender: data.sender.gender || 'male'
-        }
+          role: data.senderRole || data.sender.role || (data.sender.isAdmin ? 'admin' : 'member'),
+          isAdmin: data.senderIsAdmin || data.sender.isAdmin || false,
+          gender: data.senderGender || data.sender.gender || 'male'
+        },
+        textColor: data.textColor || '#ffffff' // لون النص المختار
       };
 
       // تجنب إضافة الرسالة مرتين - لا نضيف رسائل المستخدم الحالي لأنها مضافة محلياً
@@ -338,16 +344,27 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
     };
 
     const handleVoiceActivity = (data: any) => {
-      const { userId, isSpeaking } = data;
+      const { userId, isSpeaking, role, isAdmin, isMuted, seatNumber } = data;
 
-      // تحديث حالة التحدث للمستخدمين الآخرين
+      // تحديث حالة التحدث للمستخدمين الآخرين مع التأثيرات البصرية
       setRoomData(prev => ({
         ...prev,
-        seats: prev.seats.map(seat =>
-          seat.user?._id === userId
-            ? { ...seat, isSpeaking }
-            : seat
-        )
+        seats: prev.seats.map(seat => {
+          if (seat.user?._id === userId) {
+            return {
+              ...seat,
+              isSpeaking,
+              isMuted,
+              // تحديث معلومات المستخدم للتأثيرات البصرية
+              user: {
+                ...seat.user,
+                role: role || seat.user.role,
+                isAdmin: isAdmin || seat.user.isAdmin
+              }
+            };
+          }
+          return seat;
+        })
       }));
     };
 
@@ -474,7 +491,13 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
 
       wsService.send({
         type: 'voice_room_message',
-        data: { ...response.messageData, textColor: selectedTextColor }
+        data: {
+          ...response.messageData,
+          textColor: selectedTextColor,
+          senderRole: user.role,
+          senderIsAdmin: user.isAdmin,
+          senderGender: user.gender
+        }
       });
     } catch (err: any) {
       console.error('Error sending message:', err);
