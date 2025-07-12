@@ -270,6 +270,11 @@ class ApiService {
     });
   }
 
+  // مغادرة المقعد (alias)
+  async leaveSeat() {
+    return this.leaveVoiceSeat();
+  }
+
   // طلب الانضمام لقائمة انتظار المايك
   async requestMic() {
     return this.request('/api/voice-room/request-mic', {

@@ -80,21 +80,16 @@ export class WebRTCVoiceService {
         video: false
       });
       
-      console.log('✅ Got local audio stream');
-      
       // Start voice activity detection
       this.startVoiceActivityDetection();
-      
+
       // Notify server about joining
-      console.log('📤 Sending join_voice_room message to server');
       this.wsService.send({
         type: 'join_voice_room',
         data: { roomId, userId }
       });
-      console.log('✅ join_voice_room message sent');
-      
+
       this.isJoined = true;
-      console.log('✅ Joined voice room successfully');
       
     } catch (error) {
       console.error('❌ Error joining voice room:', error);
@@ -106,23 +101,21 @@ export class WebRTCVoiceService {
   // Leave voice room
   async leaveRoom(): Promise<void> {
     try {
-      console.log('🔄 Leaving voice room...');
-      
       // Close all peer connections
       this.peerConnections.forEach((pc, userId) => {
         pc.close();
       });
       this.peerConnections.clear();
-      
+
       // Stop local stream
       if (this.localStream) {
         this.localStream.getTracks().forEach(track => track.stop());
         this.localStream = null;
       }
-      
+
       // Stop voice monitoring
       this.stopVoiceActivityDetection();
-      
+
       // Notify server
       if (this.roomId && this.userId) {
         this.wsService.send({
@@ -130,11 +123,9 @@ export class WebRTCVoiceService {
           data: { roomId: this.roomId, userId: this.userId }
         });
       }
-      
+
       this.isJoined = false;
       this.remoteUsers.clear();
-      
-      console.log('✅ Left voice room successfully');
       
     } catch (error) {
       console.error('❌ Error leaving voice room:', error);
@@ -288,14 +279,20 @@ export class WebRTCVoiceService {
   private async handleIceCandidate(data: any) {
     try {
       const { candidate, fromUserId } = data;
-      
+
       const pc = this.peerConnections.get(fromUserId);
-      if (pc) {
+      if (pc && pc.remoteDescription) {
         await pc.addIceCandidate(candidate);
+      } else if (pc) {
+        // Queue ICE candidate if remote description not set yet
+        setTimeout(() => this.handleIceCandidate(data), 100);
       }
-      
+
     } catch (error) {
-      console.error('❌ Error handling ICE candidate:', error);
+      // Silently ignore ICE candidate errors as they're common and not critical
+      if (!error.message.includes('ICE candidate')) {
+        console.error('❌ Error handling ICE candidate:', error);
+      }
     }
   }
 
@@ -430,6 +427,33 @@ export class WebRTCVoiceService {
 
   get connectedUsers(): VoiceUser[] {
     return Array.from(this.remoteUsers.values());
+  }
+
+  // Send offer to a specific user
+  async sendOffer(userId: string): Promise<void> {
+    try {
+      if (userId === this.userId) return; // Skip self
+
+      console.log('🔄 Creating peer connection and offer for:', userId);
+
+      // Create offer for user
+      const pc = await this.createPeerConnection(userId);
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      console.log('📤 Sending WebRTC offer to:', userId);
+      this.wsService.send({
+        type: 'webrtc_offer',
+        data: {
+          offer,
+          targetUserId: userId,
+          fromUserId: this.userId
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Error sending offer:', error);
+    }
   }
 
   // Cleanup method for React component unmount

@@ -531,7 +531,10 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService }) =>
       });
     } catch (err: any) {
       console.error('Error leaving seat:', err);
-      setError(err.message || 'خطأ في مغادرة المقعد');
+      // تجاهل خطأ "لست في أي مقعد" لأنه غير مهم
+      if (!err.message?.includes('لست في أي مقعد')) {
+        setError(err.message || 'خطأ في مغادرة المقعد');
+      }
     }
   };
 
