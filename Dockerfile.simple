@@ -1,0 +1,30 @@
+# Dockerfile مبسط لـ INFINITY BOX
+FROM node:18-alpine
+
+# تعيين مجلد العمل
+WORKDIR /app
+
+# نسخ ملفات package
+COPY package*.json ./
+
+# تثبيت dependencies
+RUN npm install
+
+# نسخ باقي الملفات
+COPY . .
+
+# بناء التطبيق إذا لزم الأمر
+RUN if [ -f "vite.config.ts" ]; then npm run build; fi
+
+# إنشاء المجلدات المطلوبة
+RUN mkdir -p uploads backups analytics logs
+
+# فتح المنفذ
+EXPOSE 3000
+
+# متغيرات البيئة
+ENV NODE_ENV=production
+ENV PORT=3000
+
+# تشغيل التطبيق
+CMD ["node", "server.js"]

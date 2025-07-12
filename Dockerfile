@@ -5,34 +5,21 @@ FROM node:18-alpine
 LABEL maintainer="INFINITY BOX Team"
 LABEL description="INFINITY BOX - Gaming Platform with Real-time Sync"
 
-# تثبيت dependencies النظام المطلوبة
-RUN apk add --no-cache \
-    python3 \
-    make \
-    g++ \
-    cairo-dev \
-    jpeg-dev \
-    pango-dev \
-    musl-dev \
-    giflib-dev \
-    pixman-dev \
-    pangomm-dev \
-    libjpeg-turbo-dev \
-    freetype-dev
-
-# إنشاء مستخدم غير root للأمان
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S nextjs -u 1001
+# تثبيت dependencies النظام الأساسية فقط
+RUN apk add --no-cache python3 make g++
 
 # تعيين مجلد العمل
 WORKDIR /app
 
+# إنشاء مستخدم غير root للأمان
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nextjs -u 1001
+
 # نسخ ملفات التبعيات أولاً للاستفادة من Docker layer caching
 COPY package*.json ./
 
-# تثبيت dependencies مع تحسينات الأداء
-RUN npm ci --only=production --silent && \
-    npm cache clean --force
+# تثبيت dependencies
+RUN npm install --silent
 
 # نسخ ملفات المشروع
 COPY --chown=nextjs:nodejs . .
@@ -43,10 +30,11 @@ RUN mkdir -p uploads backups analytics logs && \
 
 # بناء التطبيق إذا كان مطلوباً
 RUN if [ -f "vite.config.ts" ]; then \
-        npm install --only=dev --silent && \
-        npm run build && \
-        npm prune --production --silent; \
+        npm run build; \
     fi
+
+# تنظيف cache
+RUN npm cache clean --force
 
 # التبديل للمستخدم غير root
 USER nextjs
