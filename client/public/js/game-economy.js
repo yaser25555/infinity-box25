@@ -292,6 +292,19 @@ class GameEconomy {
 
             console.log(`✅ تم تحديث الرصيد بنجاح: ${updatedData.newBalance}`);
 
+            // تحديث player-header فوراً
+            if (window.playerHeader) {
+                window.playerHeader.updateBalance(updatedData.newBalance);
+            }
+
+            // إرسال حدث تحديث الرصيد
+            window.dispatchEvent(new CustomEvent('balanceUpdated', {
+                detail: {
+                    newBalance: updatedData.newBalance,
+                    change: balanceChange
+                }
+            }));
+
             return {
                 success: true,
                 newBalance: updatedData.newBalance,
