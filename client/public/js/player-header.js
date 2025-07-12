@@ -260,18 +260,8 @@ class PlayerHeader {
         // تحميل بيانات اللاعب
         await this.loadPlayerData();
 
-        // تحديث الواجهة فوراً بعد التحميل
-        this.updateBalance(this.balance);
-        this.updateDisplay();
-
         // بدء التحديث الدوري
         this.startPeriodicUpdate();
-
-        // مستمع لأحداث تحديث الرصيد
-        window.addEventListener('balanceUpdated', (event) => {
-            console.log('🔄 تحديث الرصيد من حدث:', event.detail);
-            this.updateBalance(event.detail.newBalance);
-        });
 
         this.initialized = true;
     }
@@ -319,11 +309,6 @@ class PlayerHeader {
                             playerId: this.playerId,
                             avatar: this.avatar ? 'موجود' : 'غير موجود'
                         });
-
-                        // تحديث الواجهة فوراً
-                        this.updateBalance(this.balance);
-                        this.updateDisplay();
-
                         return;
                     }
                 } catch (apiError) {
@@ -476,8 +461,7 @@ class PlayerHeader {
      */
     async refreshPlayerData() {
         await this.loadPlayerData();
-        this.updateBalance(this.balance); // تحديث الرصيد
-        this.updateDisplay(); // تحديث الواجهة
+        this.updateDisplay();
     }
 
     /**

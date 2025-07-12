@@ -62,9 +62,6 @@ export class WebSocketService {
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
   private messageHandlers: Map<WebSocketMessageType, ((data: any) => void)[]> = new Map();
-  private heartbeatInterval: NodeJS.Timeout | null = null;
-  private isConnected = false;
-  private shouldReconnect = true;
 
   constructor(private url: string) {}
 
@@ -76,8 +73,6 @@ export class WebSocketService {
         this.ws.onopen = () => {
           console.log('🔌 WebSocket connected');
           this.reconnectAttempts = 0;
-          this.isConnected = true;
-          this.startHeartbeat();
           resolve();
         };
 
@@ -92,11 +87,7 @@ export class WebSocketService {
 
         this.ws.onclose = () => {
           console.log('🛑 WebSocket disconnected');
-          this.isConnected = false;
-          this.stopHeartbeat();
-          if (this.shouldReconnect) {
-            this.handleReconnect();
-          }
+          this.handleReconnect();
         };
 
         this.ws.onerror = (error) => {
@@ -216,32 +207,9 @@ export class WebSocketService {
   }
 
   disconnect() {
-    this.shouldReconnect = false;
-    this.stopHeartbeat();
     if (this.ws) {
       this.ws.close();
       this.ws = null;
     }
-    this.isConnected = false;
-  }
-
-  private startHeartbeat() {
-    this.stopHeartbeat();
-    this.heartbeatInterval = setInterval(() => {
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        this.ws.send(JSON.stringify({ type: 'ping' }));
-      }
-    }, 30000); // كل 30 ثانية
-  }
-
-  private stopHeartbeat() {
-    if (this.heartbeatInterval) {
-      clearInterval(this.heartbeatInterval);
-      this.heartbeatInterval = null;
-    }
-  }
-
-  isWebSocketConnected(): boolean {
-    return this.isConnected && this.ws?.readyState === WebSocket.OPEN;
   }
 }

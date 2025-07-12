@@ -12,7 +12,6 @@ class GameEconomy {
         this.HOUSE_EDGE = 0.05; // 5% ميزة البيت
         this.playerData = null;
         this.gameSession = null;
-        this.isUpdatingBalance = false; // منع المعاملات المتزامنة
     }
 
     /**
@@ -201,18 +200,9 @@ class GameEconomy {
      */
     async updatePlayerBalance(result) {
         try {
-            // منع المعاملات المتزامنة
-            if (this.isUpdatingBalance) {
-                console.warn('⚠️ معاملة قيد التنفيذ، انتظار...');
-                return { success: false, error: 'Transaction in progress' };
-            }
-
-            this.isUpdatingBalance = true;
-
             const token = localStorage.getItem('token');
             if (!token) {
                 console.warn('⚠️ لا يوجد توكن، تخطي تحديث الرصيد');
-                this.isUpdatingBalance = false;
                 return { success: false, error: 'No token' };
             }
 
@@ -290,21 +280,6 @@ class GameEconomy {
             const updatedData = await response.json();
             this.playerData.coins = updatedData.newBalance;
 
-            console.log(`✅ تم تحديث الرصيد بنجاح: ${updatedData.newBalance}`);
-
-            // تحديث player-header فوراً
-            if (window.playerHeader) {
-                window.playerHeader.updateBalance(updatedData.newBalance);
-            }
-
-            // إرسال حدث تحديث الرصيد
-            window.dispatchEvent(new CustomEvent('balanceUpdated', {
-                detail: {
-                    newBalance: updatedData.newBalance,
-                    change: balanceChange
-                }
-            }));
-
             return {
                 success: true,
                 newBalance: updatedData.newBalance,
@@ -314,9 +289,6 @@ class GameEconomy {
         } catch (error) {
             console.error('خطأ في تحديث الرصيد:', error);
             throw error;
-        } finally {
-            // تحرير القفل دائماً
-            this.isUpdatingBalance = false;
         }
     }
 

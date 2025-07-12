@@ -514,52 +514,7 @@ class ApiService {
     console.log('🧹 Cleared all local storage data');
   }
 
-  // Set token for authenticated requests
-  setToken(token: string) {
-    this.token = token;
-    localStorage.setItem('token', token);
-  }
 
-  // جلب بيانات التزامن
-  async getSyncData(lastSync?: Date | string) {
-    try {
-      let url = '/api/sync/data';
-      if (lastSync) {
-        const timestamp = lastSync instanceof Date ? lastSync.toISOString() : lastSync;
-        url += `?lastSync=${encodeURIComponent(timestamp)}`;
-      }
-      const response = await this.request(url);
-      return response;
-    } catch (error) {
-      console.error('خطأ في جلب بيانات التزامن:', error);
-      throw error;
-    }
-  }
-
-  // تحديث بيانات التزامن
-  async updateSyncData(data: any) {
-    try {
-      const response = await this.request('/api/sync/update', {
-        method: 'POST',
-        body: JSON.stringify(data)
-      });
-      return response;
-    } catch (error) {
-      console.error('خطأ في تحديث بيانات التزامن:', error);
-      throw error;
-    }
-  }
-
-  // فحص حالة التزامن
-  async checkSyncStatus() {
-    try {
-      const response = await this.request('/api/sync/status');
-      return response;
-    } catch (error) {
-      console.error('خطأ في فحص حالة التزامن:', error);
-      throw error;
-    }
-  }
 
 }
 
