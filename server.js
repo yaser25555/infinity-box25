@@ -4140,6 +4140,55 @@ wss.on('connection', (socket) => {
     }
   });
 
+  // دالة إزالة المستخدم من المقعد الصوتي
+  async function removeUserFromVoiceSeat(userId) {
+    try {
+      const room = await getOrCreateDefaultVoiceRoom();
+
+      // البحث عن مقعد المستخدم
+      const userSeat = room.seats.find(seat =>
+        seat.user && seat.user.toString() === userId
+      );
+
+      if (userSeat) {
+        // إزالة المستخدم من المقعد
+        userSeat.user = null;
+        userSeat.userPlayerId = null;
+        userSeat.isSpeaking = false;
+        userSeat.isMuted = false;
+        userSeat.joinedAt = null;
+
+        await room.save();
+
+        console.log(`🗑️ Removed user ${userId} from voice seat ${userSeat.seatNumber}`);
+
+        // إشعار جميع المستخدمين بالتحديث
+        const connectedClientsArray = Array.from(connectedClients.values());
+        const voiceRoomClients = connectedClientsArray.filter(client => client.isInVoiceRoom);
+
+        voiceRoomClients.forEach(client => {
+          if (client.socket.readyState === 1) {
+            client.socket.send(JSON.stringify({
+              type: 'voice_room_update',
+              data: {
+                action: 'seat_left',
+                userId: userId,
+                seatNumber: userSeat.seatNumber
+              }
+            }));
+          }
+        });
+
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      console.error('Error removing user from voice seat:', error);
+      return false;
+    }
+  }
+
   socket.on('close', async () => {
     console.log('🛑 WebSocket client disconnected');
 
@@ -4175,6 +4224,15 @@ wss.on('connection', (socket) => {
         console.log(`🗑️ Removed user ${currentUserId} from connected clients and voice seat`);
       } catch (error) {
         console.error('Error removing user from voice seat on disconnect:', error);
+        // حتى لو فشل في إزالة المستخدم من المقعد، نزيله من العملاء المتصلين
+        connectedClients.delete(currentUserId);
+      }
+    } else {
+      // إزالة العميل من القائمة حتى لو لم يكن لديه userId
+      const clientToRemove = Array.from(connectedClients.entries()).find(([id, client]) => client.socket === socket);
+      if (clientToRemove) {
+        connectedClients.delete(clientToRemove[0]);
+        console.log(`🗑️ Removed anonymous client from connected clients`);
       }
     }
   });
