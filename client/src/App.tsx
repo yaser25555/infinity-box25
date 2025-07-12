@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import AuthPage from './components/AuthPage';
 import MainDashboard from './components/MainDashboard';
 import { WebSocketService } from './services/websocket';
+import { RealTimeSyncService } from './services/realtime-sync';
 import { apiService } from './services/api';
 import { User } from './types';
 
@@ -10,10 +11,14 @@ function App() {
   const [userData, setUserData] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [wsService] = useState(() => new WebSocketService(`ws${window.location.protocol === 'https:' ? 's' : ''}://${window.location.host}/ws`));
+  const [syncService] = useState(() => new RealTimeSyncService(wsService));
 
   useEffect(() => {
     // Clear any old activeTab data
     localStorage.removeItem('activeTab');
+
+    // إعداد مستمعي أحداث التزامن
+    setupSyncEventListeners();
 
     const token = localStorage.getItem('token');
     console.log('🔍 App: Checking token:', token ? 'Token exists' : 'No token found');
@@ -66,6 +71,42 @@ function App() {
       setIsLoading(false);
     }
   }, []);
+
+  // إعداد مستمعي أحداث التزامن
+  const setupSyncEventListeners = () => {
+    // تحديث الرصيد
+    window.addEventListener('balanceUpdated', (event: any) => {
+      if (userData) {
+        setUserData(prev => prev ? {
+          ...prev,
+          goldCoins: event.detail.newBalance || event.detail.goldCoins,
+          pearls: event.detail.pearls || prev.pearls
+        } : null);
+      }
+    });
+
+    // تحديث البروفايل
+    window.addEventListener('profileUpdated', (event: any) => {
+      if (userData) {
+        setUserData(prev => prev ? {
+          ...prev,
+          ...event.detail
+        } : null);
+      }
+    });
+
+    // استلام هدية
+    window.addEventListener('giftReceived', (event: any) => {
+      // يمكن إضافة إشعار أو تحديث واجهة المستخدم
+      console.log('🎁 تم استلام هدية:', event.detail);
+    });
+
+    // فشل في تنفيذ إجراء
+    window.addEventListener('actionFailed', (event: any) => {
+      console.error('❌ فشل في تنفيذ الإجراء:', event.detail);
+      // يمكن إضافة إشعار للمستخدم
+    });
+  };
 
   const handleAuthSuccess = async (userData: any) => {
     setUserData(userData);

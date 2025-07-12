@@ -37,6 +37,10 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
+// تطبيق middleware الأمان (سيتم تعريفه لاحقاً)
+// app.use(securityMiddleware);
+// app.use(sanitizeMiddleware);
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -234,6 +238,1403 @@ const transactionSchema = new mongoose.Schema({
 });
 
 const Transaction = mongoose.model('Transaction', transactionSchema);
+
+// نظام مراقبة المعاملات المالية
+class TransactionMonitor {
+  constructor() {
+    this.suspiciousActivities = new Map(); // userId -> activities[]
+    this.dailyLimits = {
+      gold: 100000,
+      pearls: 500,
+      gifts: 50000,
+      games: 200000
+    };
+  }
+
+  // تسجيل نشاط مشبوه
+  logSuspiciousActivity(userId, activity, details) {
+    if (!this.suspiciousActivities.has(userId)) {
+      this.suspiciousActivities.set(userId, []);
+    }
+
+    const activities = this.suspiciousActivities.get(userId);
+    activities.push({
+      activity,
+      details,
+      timestamp: new Date(),
+      severity: this.calculateSeverity(activity, details)
+    });
+
+    // الاحتفاظ بآخر 100 نشاط فقط
+    if (activities.length > 100) {
+      activities.splice(0, activities.length - 100);
+    }
+
+    console.warn(`⚠️ نشاط مشبوه - المستخدم: ${userId} | النشاط: ${activity} | التفاصيل:`, details);
+
+    // إرسال تنبيه للمديرين إذا كان النشاط خطير
+    if (this.calculateSeverity(activity, details) >= 8) {
+      this.alertAdmins(userId, activity, details);
+    }
+  }
+
+  // حساب درجة خطورة النشاط
+  calculateSeverity(activity, details) {
+    let severity = 1;
+
+    switch (activity) {
+      case 'rapid_transactions':
+        severity = Math.min(10, Math.floor(details.count / 10));
+        break;
+      case 'large_amount':
+        severity = Math.min(10, Math.floor(details.amount / 10000));
+        break;
+      case 'duplicate_session':
+        severity = 7;
+        break;
+      case 'invalid_game_result':
+        severity = 9;
+        break;
+      case 'balance_manipulation':
+        severity = 10;
+        break;
+      default:
+        severity = 3;
+    }
+
+    return severity;
+  }
+
+  // تنبيه المديرين
+  async alertAdmins(userId, activity, details) {
+    try {
+      const admins = await User.find({ isAdmin: true });
+      const user = await User.findById(userId);
+
+      const alertMessage = {
+        type: 'security_alert',
+        data: {
+          userId,
+          username: user?.username || 'غير معروف',
+          activity,
+          details,
+          timestamp: new Date().toISOString(),
+          severity: this.calculateSeverity(activity, details)
+        }
+      };
+
+      // إرسال للمديرين عبر WebSocket
+      admins.forEach(admin => {
+        broadcastToUser(admin._id.toString(), alertMessage);
+      });
+
+      console.error(`🚨 تنبيه أمني عالي - المستخدم: ${user?.username} | النشاط: ${activity}`);
+    } catch (error) {
+      console.error('خطأ في إرسال تنبيه المديرين:', error);
+    }
+  }
+
+  // التحقق من الحدود اليومية
+  async checkDailyLimits(userId, transactionType, amount) {
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const dailyTransactions = await Transaction.aggregate([
+        {
+          $match: {
+            user: new mongoose.Types.ObjectId(userId),
+            createdAt: { $gte: today },
+            type: { $in: this.getRelatedTransactionTypes(transactionType) }
+          }
+        },
+        {
+          $group: {
+            _id: '$currency',
+            totalAmount: { $sum: '$amount' },
+            count: { $sum: 1 }
+          }
+        }
+      ]);
+
+      const limits = this.dailyLimits;
+      let isWithinLimits = true;
+      let warnings = [];
+
+      dailyTransactions.forEach(transaction => {
+        const currency = transaction._id;
+        const total = transaction.totalAmount;
+        const limit = limits[currency] || limits.gold;
+
+        if (total + amount > limit) {
+          isWithinLimits = false;
+          warnings.push(`تجاوز الحد اليومي لـ ${currency}: ${total + amount}/${limit}`);
+        }
+
+        // تحذير عند الوصول لـ 80% من الحد
+        if (total + amount > limit * 0.8) {
+          warnings.push(`اقتراب من الحد اليومي لـ ${currency}: ${Math.round((total + amount) / limit * 100)}%`);
+        }
+      });
+
+      return { isWithinLimits, warnings, dailyTransactions };
+    } catch (error) {
+      console.error('خطأ في فحص الحدود اليومية:', error);
+      return { isWithinLimits: true, warnings: [], dailyTransactions: [] };
+    }
+  }
+
+  // الحصول على أنواع المعاملات المرتبطة
+  getRelatedTransactionTypes(transactionType) {
+    const typeGroups = {
+      'game_win': ['game_win', 'game_loss'],
+      'game_loss': ['game_win', 'game_loss'],
+      'gift_sent': ['gift_sent'],
+      'gift_received': ['gift_received'],
+      'charge': ['charge']
+    };
+
+    return typeGroups[transactionType] || [transactionType];
+  }
+}
+
+// إنشاء مثيل من مراقب المعاملات
+const transactionMonitor = new TransactionMonitor();
+
+// نظام مراقبة الأحداث في الوقت الحقيقي
+class RealTimeEventMonitor {
+  constructor() {
+    this.activeUsers = new Map(); // userId -> { lastActivity, sessionCount, actions }
+    this.systemMetrics = {
+      totalConnections: 0,
+      activeTransactions: 0,
+      errorCount: 0,
+      lastReset: new Date()
+    };
+
+    // بدء مراقبة دورية
+    this.startPeriodicMonitoring();
+  }
+
+  // تسجيل نشاط المستخدم
+  logUserActivity(userId, activity, details = {}) {
+    const now = new Date();
+
+    if (!this.activeUsers.has(userId)) {
+      this.activeUsers.set(userId, {
+        lastActivity: now,
+        sessionCount: 1,
+        actions: []
+      });
+    }
+
+    const userActivity = this.activeUsers.get(userId);
+    userActivity.lastActivity = now;
+    userActivity.actions.push({
+      activity,
+      details,
+      timestamp: now
+    });
+
+    // الاحتفاظ بآخر 50 نشاط فقط
+    if (userActivity.actions.length > 50) {
+      userActivity.actions.splice(0, userActivity.actions.length - 50);
+    }
+
+    // فحص الأنشطة المشبوهة
+    this.checkSuspiciousActivity(userId, activity, details);
+  }
+
+  // فحص الأنشطة المشبوهة
+  checkSuspiciousActivity(userId, activity, details) {
+    const userActivity = this.activeUsers.get(userId);
+    if (!userActivity) return;
+
+    const recentActions = userActivity.actions.filter(
+      action => new Date() - action.timestamp < 60000 // آخر دقيقة
+    );
+
+    // فحص التكرار السريع
+    const sameActivityCount = recentActions.filter(
+      action => action.activity === activity
+    ).length;
+
+    if (sameActivityCount > 10) {
+      transactionMonitor.logSuspiciousActivity(userId, 'rapid_actions', {
+        activity,
+        count: sameActivityCount,
+        timeWindow: '1 minute'
+      });
+    }
+
+    // فحص أنماط غير طبيعية
+    if (activity === 'balance_update' && details.amount) {
+      const totalAmount = recentActions
+        .filter(action => action.activity === 'balance_update')
+        .reduce((sum, action) => sum + Math.abs(action.details.amount || 0), 0);
+
+      if (totalAmount > 50000) {
+        transactionMonitor.logSuspiciousActivity(userId, 'large_amount_activity', {
+          totalAmount,
+          actionsCount: recentActions.length
+        });
+      }
+    }
+  }
+
+  // تحديث إحصائيات النظام
+  updateSystemMetrics(metric, value = 1) {
+    switch (metric) {
+      case 'connection':
+        this.systemMetrics.totalConnections += value;
+        break;
+      case 'transaction':
+        this.systemMetrics.activeTransactions += value;
+        break;
+      case 'error':
+        this.systemMetrics.errorCount += value;
+        break;
+    }
+  }
+
+  // الحصول على إحصائيات النظام
+  getSystemMetrics() {
+    const now = new Date();
+    const uptime = now - this.systemMetrics.lastReset;
+
+    return {
+      ...this.systemMetrics,
+      activeUsers: this.activeUsers.size,
+      uptime: Math.floor(uptime / 1000), // بالثواني
+      timestamp: now.toISOString()
+    };
+  }
+
+  // مراقبة دورية
+  startPeriodicMonitoring() {
+    // تنظيف البيانات القديمة كل 5 دقائق
+    setInterval(() => {
+      this.cleanupOldData();
+    }, 5 * 60 * 1000);
+
+    // إرسال إحصائيات للمديرين كل دقيقة
+    setInterval(() => {
+      this.sendMetricsToAdmins();
+    }, 60 * 1000);
+  }
+
+  // تنظيف البيانات القديمة
+  cleanupOldData() {
+    const now = new Date();
+    const fiveMinutesAgo = new Date(now - 5 * 60 * 1000);
+
+    // إزالة المستخدمين غير النشطين
+    for (const [userId, userActivity] of this.activeUsers.entries()) {
+      if (userActivity.lastActivity < fiveMinutesAgo) {
+        this.activeUsers.delete(userId);
+      }
+    }
+
+    console.log(`🧹 تنظيف البيانات - المستخدمين النشطين: ${this.activeUsers.size}`);
+  }
+
+  // إرسال إحصائيات للمديرين
+  async sendMetricsToAdmins() {
+    try {
+      const metrics = this.getSystemMetrics();
+
+      // إرسال فقط إذا كان هناك نشاط مهم
+      if (metrics.activeUsers > 0 || metrics.errorCount > 0) {
+        const admins = await User.find({ isAdmin: true });
+
+        const metricsMessage = {
+          type: 'system_metrics',
+          data: metrics
+        };
+
+        admins.forEach(admin => {
+          broadcastToUser(admin._id.toString(), metricsMessage);
+        });
+      }
+    } catch (error) {
+      console.error('خطأ في إرسال الإحصائيات:', error);
+    }
+  }
+}
+
+// إنشاء مثيل من مراقب الأحداث
+const eventMonitor = new RealTimeEventMonitor();
+
+// نظام الحماية من الهجمات
+class SecurityManager {
+  constructor() {
+    this.rateLimits = new Map(); // IP -> { requests: [], lastReset: Date }
+    this.suspiciousIPs = new Set();
+    this.blockedIPs = new Set();
+
+    // تنظيف دوري للبيانات
+    setInterval(() => {
+      this.cleanupRateLimits();
+    }, 60 * 1000); // كل دقيقة
+  }
+
+  // فحص معدل الطلبات
+  checkRateLimit(ip, endpoint, limit = 100, windowMs = 60000) {
+    const now = Date.now();
+
+    if (!this.rateLimits.has(ip)) {
+      this.rateLimits.set(ip, {
+        requests: [],
+        lastReset: now
+      });
+    }
+
+    const ipData = this.rateLimits.get(ip);
+
+    // إزالة الطلبات القديمة
+    ipData.requests = ipData.requests.filter(time => now - time < windowMs);
+
+    // إضافة الطلب الحالي
+    ipData.requests.push(now);
+
+    // فحص تجاوز الحد
+    if (ipData.requests.length > limit) {
+      this.flagSuspiciousIP(ip, 'rate_limit_exceeded', {
+        requests: ipData.requests.length,
+        limit: limit,
+        endpoint: endpoint
+      });
+      return false;
+    }
+
+    return true;
+  }
+
+  // تسجيل IP مشبوه
+  flagSuspiciousIP(ip, reason, details) {
+    this.suspiciousIPs.add(ip);
+
+    console.warn(`⚠️ IP مشبوه: ${ip} | السبب: ${reason}`, details);
+
+    // حظر تلقائي بعد عدة مخالفات
+    const violations = this.countViolations(ip);
+    if (violations >= 5) {
+      this.blockIP(ip, reason);
+    }
+  }
+
+  // حظر IP
+  blockIP(ip, reason) {
+    this.blockedIPs.add(ip);
+    console.error(`🚫 تم حظر IP: ${ip} | السبب: ${reason}`);
+
+    // إزالة الحظر بعد ساعة
+    setTimeout(() => {
+      this.blockedIPs.delete(ip);
+      console.log(`✅ تم رفع الحظر عن IP: ${ip}`);
+    }, 60 * 60 * 1000);
+  }
+
+  // عد المخالفات
+  countViolations(ip) {
+    // يمكن تحسين هذا بحفظ المخالفات في قاعدة البيانات
+    return this.suspiciousIPs.has(ip) ? 1 : 0;
+  }
+
+  // تنظيف بيانات معدل الطلبات
+  cleanupRateLimits() {
+    const now = Date.now();
+    const oneHourAgo = now - 60 * 60 * 1000;
+
+    for (const [ip, data] of this.rateLimits.entries()) {
+      if (data.lastReset < oneHourAgo) {
+        this.rateLimits.delete(ip);
+      }
+    }
+  }
+
+  // فحص IP محظور
+  isBlocked(ip) {
+    return this.blockedIPs.has(ip);
+  }
+
+  // فحص محتوى مشبوه
+  checkSuspiciousContent(content) {
+    const suspiciousPatterns = [
+      /<script/i,
+      /javascript:/i,
+      /on\w+\s*=/i,
+      /eval\s*\(/i,
+      /document\./i,
+      /window\./i,
+      /alert\s*\(/i
+    ];
+
+    return suspiciousPatterns.some(pattern => pattern.test(content));
+  }
+
+  // تنظيف المحتوى
+  sanitizeContent(content) {
+    if (typeof content !== 'string') return content;
+
+    return content
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+      .replace(/javascript:/gi, '')
+      .replace(/on\w+\s*=/gi, '')
+      .trim();
+  }
+}
+
+// إنشاء مثيل من مدير الأمان
+const securityManager = new SecurityManager();
+
+// نظام النسخ الاحتياطي التلقائي
+class AutoBackupSystem {
+  constructor() {
+    this.backupInterval = 6 * 60 * 60 * 1000; // كل 6 ساعات
+    this.maxBackups = 24; // الاحتفاظ بـ 24 نسخة (4 أيام)
+    this.backupPath = path.join(__dirname, 'backups');
+    this.criticalCollections = ['users', 'transactions', 'gifts', 'gamestats'];
+
+    this.initializeBackupSystem();
+  }
+
+  // تهيئة نظام النسخ الاحتياطي
+  async initializeBackupSystem() {
+    try {
+      // إنشاء مجلد النسخ الاحتياطية
+      if (!require('fs').existsSync(this.backupPath)) {
+        require('fs').mkdirSync(this.backupPath, { recursive: true });
+      }
+
+      // بدء النسخ الاحتياطي الدوري
+      this.startPeriodicBackup();
+
+      console.log('✅ نظام النسخ الاحتياطي جاهز');
+    } catch (error) {
+      console.error('❌ خطأ في تهيئة نظام النسخ الاحتياطي:', error);
+    }
+  }
+
+  // بدء النسخ الاحتياطي الدوري
+  startPeriodicBackup() {
+    // نسخة احتياطية فورية عند البدء
+    setTimeout(() => {
+      this.createFullBackup();
+    }, 30000); // بعد 30 ثانية من البدء
+
+    // نسخ احتياطية دورية
+    setInterval(() => {
+      this.createFullBackup();
+    }, this.backupInterval);
+
+    // تنظيف النسخ القديمة يومياً
+    setInterval(() => {
+      this.cleanupOldBackups();
+    }, 24 * 60 * 60 * 1000);
+  }
+
+  // إنشاء نسخة احتياطية كاملة
+  async createFullBackup() {
+    const backupId = `backup_${Date.now()}`;
+    const backupDir = path.join(this.backupPath, backupId);
+
+    try {
+      require('fs').mkdirSync(backupDir, { recursive: true });
+
+      console.log(`🔄 بدء النسخ الاحتياطي: ${backupId}`);
+
+      const backupResults = {};
+
+      // نسخ احتياطي للمجموعات الحرجة
+      for (const collection of this.criticalCollections) {
+        try {
+          const result = await this.backupCollection(collection, backupDir);
+          backupResults[collection] = result;
+        } catch (error) {
+          console.error(`❌ خطأ في نسخ ${collection}:`, error);
+          backupResults[collection] = { error: error.message };
+        }
+      }
+
+      // حفظ معلومات النسخة الاحتياطية
+      const backupInfo = {
+        id: backupId,
+        timestamp: new Date().toISOString(),
+        collections: backupResults,
+        systemInfo: {
+          nodeVersion: process.version,
+          platform: process.platform,
+          memory: process.memoryUsage(),
+          uptime: process.uptime()
+        }
+      };
+
+      require('fs').writeFileSync(
+        path.join(backupDir, 'backup_info.json'),
+        JSON.stringify(backupInfo, null, 2)
+      );
+
+      console.log(`✅ تم إنشاء النسخة الاحتياطية: ${backupId}`);
+
+      // إرسال تقرير للمديرين
+      this.notifyAdminsBackupComplete(backupInfo);
+
+      return backupInfo;
+    } catch (error) {
+      console.error(`❌ فشل في إنشاء النسخة الاحتياطية ${backupId}:`, error);
+      throw error;
+    }
+  }
+
+  // نسخ احتياطي لمجموعة واحدة
+  async backupCollection(collectionName, backupDir) {
+    try {
+      let Model;
+      switch (collectionName) {
+        case 'users':
+          Model = User;
+          break;
+        case 'transactions':
+          Model = Transaction;
+          break;
+        case 'gifts':
+          Model = Gift;
+          break;
+        case 'gamestats':
+          Model = GameStats;
+          break;
+        default:
+          throw new Error(`مجموعة غير معروفة: ${collectionName}`);
+      }
+
+      const documents = await Model.find({}).lean();
+      const filePath = path.join(backupDir, `${collectionName}.json`);
+
+      require('fs').writeFileSync(filePath, JSON.stringify(documents, null, 2));
+
+      return {
+        success: true,
+        count: documents.length,
+        size: require('fs').statSync(filePath).size,
+        path: filePath
+      };
+    } catch (error) {
+      throw new Error(`فشل في نسخ ${collectionName}: ${error.message}`);
+    }
+  }
+
+  // تنظيف النسخ القديمة
+  async cleanupOldBackups() {
+    try {
+      const backupDirs = require('fs').readdirSync(this.backupPath)
+        .filter(dir => dir.startsWith('backup_'))
+        .map(dir => ({
+          name: dir,
+          path: path.join(this.backupPath, dir),
+          timestamp: parseInt(dir.split('_')[1])
+        }))
+        .sort((a, b) => b.timestamp - a.timestamp);
+
+      // حذف النسخ الزائدة
+      if (backupDirs.length > this.maxBackups) {
+        const toDelete = backupDirs.slice(this.maxBackups);
+
+        for (const backup of toDelete) {
+          require('fs').rmSync(backup.path, { recursive: true, force: true });
+          console.log(`🗑️ تم حذف النسخة الاحتياطية القديمة: ${backup.name}`);
+        }
+      }
+
+      console.log(`🧹 تنظيف النسخ الاحتياطية - المتبقي: ${Math.min(backupDirs.length, this.maxBackups)}`);
+    } catch (error) {
+      console.error('❌ خطأ في تنظيف النسخ الاحتياطية:', error);
+    }
+  }
+
+  // استعادة من نسخة احتياطية
+  async restoreFromBackup(backupId) {
+    const backupDir = path.join(this.backupPath, backupId);
+
+    try {
+      if (!require('fs').existsSync(backupDir)) {
+        throw new Error(`النسخة الاحتياطية غير موجودة: ${backupId}`);
+      }
+
+      const backupInfoPath = path.join(backupDir, 'backup_info.json');
+      const backupInfo = JSON.parse(require('fs').readFileSync(backupInfoPath, 'utf8'));
+
+      console.log(`🔄 بدء الاستعادة من: ${backupId}`);
+
+      const restoreResults = {};
+
+      // استعادة كل مجموعة
+      for (const collection of this.criticalCollections) {
+        try {
+          const result = await this.restoreCollection(collection, backupDir);
+          restoreResults[collection] = result;
+        } catch (error) {
+          console.error(`❌ خطأ في استعادة ${collection}:`, error);
+          restoreResults[collection] = { error: error.message };
+        }
+      }
+
+      console.log(`✅ تمت الاستعادة من: ${backupId}`);
+      return { backupInfo, restoreResults };
+    } catch (error) {
+      console.error(`❌ فشل في الاستعادة من ${backupId}:`, error);
+      throw error;
+    }
+  }
+
+  // استعادة مجموعة واحدة
+  async restoreCollection(collectionName, backupDir) {
+    try {
+      let Model;
+      switch (collectionName) {
+        case 'users':
+          Model = User;
+          break;
+        case 'transactions':
+          Model = Transaction;
+          break;
+        case 'gifts':
+          Model = Gift;
+          break;
+        case 'gamestats':
+          Model = GameStats;
+          break;
+        default:
+          throw new Error(`مجموعة غير معروفة: ${collectionName}`);
+      }
+
+      const filePath = path.join(backupDir, `${collectionName}.json`);
+      const documents = JSON.parse(require('fs').readFileSync(filePath, 'utf8'));
+
+      // حذف البيانات الحالية (احتياط)
+      await Model.deleteMany({});
+
+      // إدراج البيانات المستعادة
+      await Model.insertMany(documents);
+
+      return {
+        success: true,
+        restored: documents.length
+      };
+    } catch (error) {
+      throw new Error(`فشل في استعادة ${collectionName}: ${error.message}`);
+    }
+  }
+
+  // إشعار المديرين بإتمام النسخ الاحتياطي
+  async notifyAdminsBackupComplete(backupInfo) {
+    try {
+      const admins = await User.find({ isAdmin: true });
+
+      const message = {
+        type: 'backup_complete',
+        data: {
+          backupId: backupInfo.id,
+          timestamp: backupInfo.timestamp,
+          collections: Object.keys(backupInfo.collections),
+          success: Object.values(backupInfo.collections).every(r => r.success)
+        }
+      };
+
+      admins.forEach(admin => {
+        broadcastToUser(admin._id.toString(), message);
+      });
+    } catch (error) {
+      console.error('خطأ في إشعار المديرين:', error);
+    }
+  }
+
+  // الحصول على قائمة النسخ الاحتياطية
+  getBackupsList() {
+    try {
+      return require('fs').readdirSync(this.backupPath)
+        .filter(dir => dir.startsWith('backup_'))
+        .map(dir => {
+          const backupInfoPath = path.join(this.backupPath, dir, 'backup_info.json');
+          if (require('fs').existsSync(backupInfoPath)) {
+            return JSON.parse(require('fs').readFileSync(backupInfoPath, 'utf8'));
+          }
+          return null;
+        })
+        .filter(info => info !== null)
+        .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    } catch (error) {
+      console.error('خطأ في جلب قائمة النسخ الاحتياطية:', error);
+      return [];
+    }
+  }
+}
+
+// إنشاء مثيل من نظام النسخ الاحتياطي
+const backupSystem = new AutoBackupSystem();
+
+// نظام الكاش الذكي
+class SmartCacheSystem {
+  constructor() {
+    this.cache = new Map();
+    this.accessCount = new Map();
+    this.lastAccess = new Map();
+    this.maxSize = 1000; // حد أقصى 1000 عنصر
+    this.ttl = 5 * 60 * 1000; // 5 دقائق افتراضي
+    this.hitCount = 0;
+    this.missCount = 0;
+
+    // تنظيف دوري
+    setInterval(() => {
+      this.cleanup();
+    }, 60 * 1000); // كل دقيقة
+  }
+
+  // إضافة عنصر للكاش
+  set(key, value, customTTL = null) {
+    const ttl = customTTL || this.ttl;
+    const expiresAt = Date.now() + ttl;
+
+    // إزالة عنصر قديم إذا تجاوز الحد الأقصى
+    if (this.cache.size >= this.maxSize) {
+      this.evictLeastUsed();
+    }
+
+    this.cache.set(key, {
+      value,
+      expiresAt,
+      createdAt: Date.now()
+    });
+
+    this.accessCount.set(key, 0);
+    this.lastAccess.set(key, Date.now());
+
+    console.log(`📦 تم حفظ في الكاش: ${key}`);
+  }
+
+  // جلب عنصر من الكاش
+  get(key) {
+    const item = this.cache.get(key);
+
+    if (!item) {
+      this.missCount++;
+      console.log(`❌ كاش miss: ${key}`);
+      return null;
+    }
+
+    // فحص انتهاء الصلاحية
+    if (Date.now() > item.expiresAt) {
+      this.delete(key);
+      this.missCount++;
+      console.log(`⏰ انتهت صلاحية الكاش: ${key}`);
+      return null;
+    }
+
+    // تحديث إحصائيات الوصول
+    this.hitCount++;
+    this.accessCount.set(key, (this.accessCount.get(key) || 0) + 1);
+    this.lastAccess.set(key, Date.now());
+
+    console.log(`✅ كاش hit: ${key}`);
+    return item.value;
+  }
+
+  // حذف عنصر من الكاش
+  delete(key) {
+    this.cache.delete(key);
+    this.accessCount.delete(key);
+    this.lastAccess.delete(key);
+  }
+
+  // إزالة العنصر الأقل استخداماً
+  evictLeastUsed() {
+    let leastUsedKey = null;
+    let leastUsedCount = Infinity;
+    let oldestAccess = Infinity;
+
+    for (const [key, count] of this.accessCount.entries()) {
+      const lastAccessTime = this.lastAccess.get(key) || 0;
+
+      if (count < leastUsedCount || (count === leastUsedCount && lastAccessTime < oldestAccess)) {
+        leastUsedKey = key;
+        leastUsedCount = count;
+        oldestAccess = lastAccessTime;
+      }
+    }
+
+    if (leastUsedKey) {
+      this.delete(leastUsedKey);
+      console.log(`🗑️ تم إزالة من الكاش (أقل استخداماً): ${leastUsedKey}`);
+    }
+  }
+
+  // تنظيف العناصر المنتهية الصلاحية
+  cleanup() {
+    const now = Date.now();
+    let cleanedCount = 0;
+
+    for (const [key, item] of this.cache.entries()) {
+      if (now > item.expiresAt) {
+        this.delete(key);
+        cleanedCount++;
+      }
+    }
+
+    if (cleanedCount > 0) {
+      console.log(`🧹 تم تنظيف ${cleanedCount} عنصر منتهي الصلاحية من الكاش`);
+    }
+  }
+
+  // مسح الكاش بالكامل
+  clear() {
+    const size = this.cache.size;
+    this.cache.clear();
+    this.accessCount.clear();
+    this.lastAccess.clear();
+    console.log(`🗑️ تم مسح الكاش بالكامل (${size} عنصر)`);
+  }
+
+  // إحصائيات الكاش
+  getStats() {
+    const totalRequests = this.hitCount + this.missCount;
+    const hitRate = totalRequests > 0 ? (this.hitCount / totalRequests * 100).toFixed(2) : 0;
+
+    return {
+      size: this.cache.size,
+      maxSize: this.maxSize,
+      hitCount: this.hitCount,
+      missCount: this.missCount,
+      hitRate: `${hitRate}%`,
+      totalRequests: totalRequests
+    };
+  }
+
+  // كاش ذكي للمستخدمين
+  async cacheUser(userId) {
+    const cacheKey = `user:${userId}`;
+    let user = this.get(cacheKey);
+
+    if (!user) {
+      user = await User.findById(userId).lean();
+      if (user) {
+        this.set(cacheKey, user, 10 * 60 * 1000); // 10 دقائق للمستخدمين
+      }
+    }
+
+    return user;
+  }
+
+  // كاش للمعاملات الحديثة
+  async cacheRecentTransactions(userId, limit = 10) {
+    const cacheKey = `transactions:${userId}:${limit}`;
+    let transactions = this.get(cacheKey);
+
+    if (!transactions) {
+      transactions = await Transaction.find({ user: userId })
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .lean();
+
+      if (transactions) {
+        this.set(cacheKey, transactions, 2 * 60 * 1000); // دقيقتان للمعاملات
+      }
+    }
+
+    return transactions;
+  }
+
+  // كاش لإحصائيات الألعاب
+  async cacheGameStats(userId) {
+    const cacheKey = `gamestats:${userId}`;
+    let stats = this.get(cacheKey);
+
+    if (!stats) {
+      stats = await GameStats.find({ userId })
+        .sort({ startTime: -1 })
+        .limit(50)
+        .lean();
+
+      if (stats) {
+        this.set(cacheKey, stats, 5 * 60 * 1000); // 5 دقائق للإحصائيات
+      }
+    }
+
+    return stats;
+  }
+
+  // إبطال كاش المستخدم عند التحديث
+  invalidateUserCache(userId) {
+    const patterns = [`user:${userId}`, `transactions:${userId}`, `gamestats:${userId}`];
+
+    for (const [key] of this.cache.entries()) {
+      if (patterns.some(pattern => key.startsWith(pattern))) {
+        this.delete(key);
+      }
+    }
+
+    console.log(`🔄 تم إبطال كاش المستخدم: ${userId}`);
+  }
+
+  // كاش للبيانات العامة
+  async cacheSystemData(key, fetchFunction, ttl = 5 * 60 * 1000) {
+    let data = this.get(key);
+
+    if (!data) {
+      data = await fetchFunction();
+      if (data) {
+        this.set(key, data, ttl);
+      }
+    }
+
+    return data;
+  }
+}
+
+// إنشاء مثيل من نظام الكاش
+const smartCache = new SmartCacheSystem();
+
+// نظام التحليلات المتقدمة
+class AdvancedAnalyticsSystem {
+  constructor() {
+    this.metrics = new Map();
+    this.userSessions = new Map();
+    this.gameAnalytics = new Map();
+    this.financialMetrics = new Map();
+    this.realTimeData = {
+      activeUsers: 0,
+      onlineUsers: new Set(),
+      currentTransactions: 0,
+      systemLoad: 0
+    };
+
+    this.startRealTimeTracking();
+  }
+
+  // بدء التتبع في الوقت الحقيقي
+  startRealTimeTracking() {
+    // تحديث الإحصائيات كل 30 ثانية
+    setInterval(() => {
+      this.updateRealTimeMetrics();
+    }, 30 * 1000);
+
+    // حفظ التحليلات كل 5 دقائق
+    setInterval(() => {
+      this.saveAnalytics();
+    }, 5 * 60 * 1000);
+
+    // تنظيف البيانات القديمة يومياً
+    setInterval(() => {
+      this.cleanupOldData();
+    }, 24 * 60 * 60 * 1000);
+  }
+
+  // تسجيل حدث
+  trackEvent(category, action, label = '', value = 0, userId = null) {
+    const event = {
+      category,
+      action,
+      label,
+      value,
+      userId,
+      timestamp: new Date(),
+      sessionId: this.getSessionId(userId)
+    };
+
+    // إضافة للمقاييس العامة
+    const key = `${category}:${action}`;
+    if (!this.metrics.has(key)) {
+      this.metrics.set(key, {
+        count: 0,
+        totalValue: 0,
+        uniqueUsers: new Set(),
+        hourlyData: new Array(24).fill(0),
+        dailyData: new Array(7).fill(0)
+      });
+    }
+
+    const metric = this.metrics.get(key);
+    metric.count++;
+    metric.totalValue += value;
+
+    if (userId) {
+      metric.uniqueUsers.add(userId);
+    }
+
+    // تحديث البيانات الزمنية
+    const hour = event.timestamp.getHours();
+    const day = event.timestamp.getDay();
+    metric.hourlyData[hour]++;
+    metric.dailyData[day]++;
+
+    // تحليل خاص حسب الفئة
+    switch (category) {
+      case 'game':
+        this.trackGameEvent(action, label, value, userId);
+        break;
+      case 'financial':
+        this.trackFinancialEvent(action, label, value, userId);
+        break;
+      case 'user':
+        this.trackUserEvent(action, label, value, userId);
+        break;
+    }
+
+    console.log(`📊 تم تسجيل حدث: ${category}/${action} | المستخدم: ${userId || 'غير محدد'}`);
+  }
+
+  // تتبع أحداث الألعاب
+  trackGameEvent(action, gameType, value, userId) {
+    if (!this.gameAnalytics.has(gameType)) {
+      this.gameAnalytics.set(gameType, {
+        totalPlays: 0,
+        totalWins: 0,
+        totalLosses: 0,
+        totalWinAmount: 0,
+        totalLossAmount: 0,
+        averageSessionTime: 0,
+        uniquePlayers: new Set(),
+        popularityScore: 0
+      });
+    }
+
+    const gameData = this.gameAnalytics.get(gameType);
+
+    switch (action) {
+      case 'game_start':
+        gameData.totalPlays++;
+        if (userId) gameData.uniquePlayers.add(userId);
+        break;
+      case 'game_win':
+        gameData.totalWins++;
+        gameData.totalWinAmount += value;
+        break;
+      case 'game_loss':
+        gameData.totalLosses++;
+        gameData.totalLossAmount += value;
+        break;
+    }
+
+    // حساب نقاط الشعبية
+    gameData.popularityScore = this.calculatePopularityScore(gameData);
+  }
+
+  // تتبع الأحداث المالية
+  trackFinancialEvent(action, currency, amount, userId) {
+    if (!this.financialMetrics.has(currency)) {
+      this.financialMetrics.set(currency, {
+        totalTransactions: 0,
+        totalVolume: 0,
+        totalDeposits: 0,
+        totalWithdrawals: 0,
+        averageTransaction: 0,
+        uniqueUsers: new Set()
+      });
+    }
+
+    const finData = this.financialMetrics.get(currency);
+    finData.totalTransactions++;
+    finData.totalVolume += Math.abs(amount);
+
+    if (userId) finData.uniqueUsers.add(userId);
+
+    switch (action) {
+      case 'deposit':
+      case 'gift_received':
+      case 'game_win':
+        finData.totalDeposits += amount;
+        break;
+      case 'withdrawal':
+      case 'gift_sent':
+      case 'game_loss':
+        finData.totalWithdrawals += Math.abs(amount);
+        break;
+    }
+
+    finData.averageTransaction = finData.totalVolume / finData.totalTransactions;
+  }
+
+  // تتبع أحداث المستخدمين
+  trackUserEvent(action, label, value, userId) {
+    if (!userId) return;
+
+    if (!this.userSessions.has(userId)) {
+      this.userSessions.set(userId, {
+        sessionStart: new Date(),
+        totalSessions: 0,
+        totalTime: 0,
+        actions: [],
+        preferences: {},
+        behavior: {
+          mostActiveHour: 0,
+          favoriteGame: '',
+          averageSessionLength: 0,
+          engagementScore: 0
+        }
+      });
+    }
+
+    const userSession = this.userSessions.get(userId);
+
+    switch (action) {
+      case 'login':
+        userSession.sessionStart = new Date();
+        userSession.totalSessions++;
+        this.realTimeData.onlineUsers.add(userId);
+        break;
+      case 'logout':
+        const sessionTime = Date.now() - userSession.sessionStart.getTime();
+        userSession.totalTime += sessionTime;
+        userSession.averageSessionLength = userSession.totalTime / userSession.totalSessions;
+        this.realTimeData.onlineUsers.delete(userId);
+        break;
+      case 'page_view':
+        userSession.actions.push({ action: 'page_view', page: label, timestamp: new Date() });
+        break;
+    }
+
+    // حساب نقاط المشاركة
+    userSession.behavior.engagementScore = this.calculateEngagementScore(userSession);
+  }
+
+  // حساب نقاط الشعبية للألعاب
+  calculatePopularityScore(gameData) {
+    const playRate = gameData.totalPlays / Math.max(1, gameData.uniquePlayers.size);
+    const winRate = gameData.totalWins / Math.max(1, gameData.totalPlays);
+    const profitability = (gameData.totalWinAmount - gameData.totalLossAmount) / Math.max(1, gameData.totalPlays);
+
+    return (playRate * 0.4 + winRate * 0.3 + Math.max(0, profitability / 1000) * 0.3) * 100;
+  }
+
+  // حساب نقاط المشاركة
+  calculateEngagementScore(userSession) {
+    const sessionFrequency = userSession.totalSessions / 30; // متوسط الجلسات في الشهر
+    const sessionLength = userSession.averageSessionLength / (60 * 1000); // بالدقائق
+    const activityLevel = userSession.actions.length / Math.max(1, userSession.totalSessions);
+
+    return Math.min(100, (sessionFrequency * 20 + Math.min(sessionLength, 60) + activityLevel * 10));
+  }
+
+  // تحديث المقاييس في الوقت الحقيقي
+  async updateRealTimeMetrics() {
+    try {
+      // عدد المستخدمين النشطين
+      this.realTimeData.activeUsers = this.realTimeData.onlineUsers.size;
+
+      // عدد المعاملات الحالية
+      const recentTransactions = await Transaction.countDocuments({
+        createdAt: { $gte: new Date(Date.now() - 5 * 60 * 1000) } // آخر 5 دقائق
+      });
+      this.realTimeData.currentTransactions = recentTransactions;
+
+      // حمولة النظام
+      const memoryUsage = process.memoryUsage();
+      this.realTimeData.systemLoad = (memoryUsage.heapUsed / memoryUsage.heapTotal) * 100;
+
+      // إرسال للمديرين
+      this.broadcastRealTimeData();
+    } catch (error) {
+      console.error('خطأ في تحديث المقاييس:', error);
+    }
+  }
+
+  // إرسال البيانات الفورية للمديرين
+  async broadcastRealTimeData() {
+    try {
+      const admins = await User.find({ isAdmin: true });
+
+      const data = {
+        type: 'real_time_analytics',
+        data: {
+          ...this.realTimeData,
+          onlineUsers: Array.from(this.realTimeData.onlineUsers),
+          timestamp: new Date().toISOString()
+        }
+      };
+
+      admins.forEach(admin => {
+        broadcastToUser(admin._id.toString(), data);
+      });
+    } catch (error) {
+      console.error('خطأ في إرسال البيانات الفورية:', error);
+    }
+  }
+
+  // حفظ التحليلات
+  async saveAnalytics() {
+    try {
+      const analyticsData = {
+        timestamp: new Date(),
+        metrics: Object.fromEntries(
+          Array.from(this.metrics.entries()).map(([key, value]) => [
+            key,
+            {
+              ...value,
+              uniqueUsers: value.uniqueUsers.size
+            }
+          ])
+        ),
+        gameAnalytics: Object.fromEntries(
+          Array.from(this.gameAnalytics.entries()).map(([key, value]) => [
+            key,
+            {
+              ...value,
+              uniquePlayers: value.uniquePlayers.size
+            }
+          ])
+        ),
+        financialMetrics: Object.fromEntries(
+          Array.from(this.financialMetrics.entries()).map(([key, value]) => [
+            key,
+            {
+              ...value,
+              uniqueUsers: value.uniqueUsers.size
+            }
+          ])
+        ),
+        realTimeData: {
+          ...this.realTimeData,
+          onlineUsers: this.realTimeData.onlineUsers.size
+        }
+      };
+
+      // حفظ في ملف (يمكن تحسينه بحفظ في قاعدة البيانات)
+      const fs = require('fs');
+      const analyticsDir = path.join(__dirname, 'analytics');
+
+      if (!fs.existsSync(analyticsDir)) {
+        fs.mkdirSync(analyticsDir, { recursive: true });
+      }
+
+      const filename = `analytics_${new Date().toISOString().split('T')[0]}.json`;
+      const filepath = path.join(analyticsDir, filename);
+
+      fs.writeFileSync(filepath, JSON.stringify(analyticsData, null, 2));
+
+      console.log(`📊 تم حفظ التحليلات: ${filename}`);
+    } catch (error) {
+      console.error('خطأ في حفظ التحليلات:', error);
+    }
+  }
+
+  // تنظيف البيانات القديمة
+  cleanupOldData() {
+    const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+    // تنظيف جلسات المستخدمين القديمة
+    for (const [userId, session] of this.userSessions.entries()) {
+      if (session.sessionStart.getTime() < oneWeekAgo) {
+        this.userSessions.delete(userId);
+      }
+    }
+
+    console.log('🧹 تم تنظيف البيانات القديمة');
+  }
+
+  // الحصول على معرف الجلسة
+  getSessionId(userId) {
+    if (!userId) return 'anonymous';
+
+    const session = this.userSessions.get(userId);
+    return session ? `${userId}_${session.sessionStart.getTime()}` : `${userId}_${Date.now()}`;
+  }
+
+  // الحصول على تقرير شامل
+  getComprehensiveReport() {
+    const report = {
+      overview: {
+        totalEvents: Array.from(this.metrics.values()).reduce((sum, m) => sum + m.count, 0),
+        uniqueUsers: new Set(Array.from(this.userSessions.keys())).size,
+        activeUsers: this.realTimeData.activeUsers,
+        systemLoad: this.realTimeData.systemLoad
+      },
+      games: Object.fromEntries(
+        Array.from(this.gameAnalytics.entries()).map(([game, data]) => [
+          game,
+          {
+            ...data,
+            uniquePlayers: data.uniquePlayers.size,
+            winRate: (data.totalWins / Math.max(1, data.totalPlays) * 100).toFixed(2) + '%',
+            profitability: data.totalWinAmount - data.totalLossAmount
+          }
+        ])
+      ),
+      financial: Object.fromEntries(
+        Array.from(this.financialMetrics.entries()).map(([currency, data]) => [
+          currency,
+          {
+            ...data,
+            uniqueUsers: data.uniqueUsers.size,
+            netFlow: data.totalDeposits - data.totalWithdrawals
+          }
+        ])
+      ),
+      topUsers: Array.from(this.userSessions.entries())
+        .map(([userId, session]) => ({
+          userId,
+          engagementScore: session.behavior.engagementScore,
+          totalSessions: session.totalSessions,
+          averageSessionLength: Math.round(session.behavior.averageSessionLength / 60000) // بالدقائق
+        }))
+        .sort((a, b) => b.engagementScore - a.engagementScore)
+        .slice(0, 10)
+    };
+
+    return report;
+  }
+
+  // الحصول على البيانات الفورية
+  getRealTimeData() {
+    return {
+      ...this.realTimeData,
+      onlineUsers: Array.from(this.realTimeData.onlineUsers)
+    };
+  }
+}
+
+// إنشاء مثيل من نظام التحليلات
+const analyticsSystem = new AdvancedAnalyticsSystem();
+
+// middleware للحماية من الهجمات
+const securityMiddleware = (req, res, next) => {
+  const clientIP = req.ip || req.connection.remoteAddress;
+
+  // فحص IP محظور
+  if (securityManager.isBlocked(clientIP)) {
+    return res.status(403).json({ message: 'Access denied' });
+  }
+
+  // فحص معدل الطلبات
+  if (!securityManager.checkRateLimit(clientIP, req.path)) {
+    return res.status(429).json({ message: 'Too many requests' });
+  }
+
+  // فحص المحتوى المشبوه في البيانات
+  if (req.body) {
+    for (const [key, value] of Object.entries(req.body)) {
+      if (typeof value === 'string' && securityManager.checkSuspiciousContent(value)) {
+        securityManager.flagSuspiciousIP(clientIP, 'suspicious_content', {
+          field: key,
+          content: value.substring(0, 100)
+        });
+        return res.status(400).json({ message: 'Invalid content detected' });
+      }
+    }
+  }
+
+  next();
+};
+
+// middleware لتنظيف البيانات
+const sanitizeMiddleware = (req, res, next) => {
+  if (req.body) {
+    for (const [key, value] of Object.entries(req.body)) {
+      if (typeof value === 'string') {
+        req.body[key] = securityManager.sanitizeContent(value);
+      }
+    }
+  }
+  next();
+};
 
 // نموذج الشحن المجاني
 const freeChargeSchema = new mongoose.Schema({
@@ -483,22 +1884,46 @@ const createNotification = async (userId, type, title, message, data = {}, fromU
   }
 };
 
-// middleware للمصادقة
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+// middleware للمصادقة مع تحسينات الأمان
+const authenticateToken = async (req, res, next) => {
+  try {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
 
-  if (!token) {
-    return res.status(401).json({ message: 'Access token required' });
-  }
-
-  jwt.verify(token, process.env.JWT_SECRET || 'infinitybox_secret_key', (err, user) => {
-    if (err) {
-      return res.status(403).json({ message: 'Invalid token' });
+    if (!token) {
+      return res.status(401).json({ message: 'Access token required' });
     }
-    req.user = user;
+
+    // التحقق من صحة التوكن
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'infinitybox_secret_key');
+
+    // التحقق من وجود المستخدم في قاعدة البيانات
+    const user = await User.findById(decoded.userId);
+    if (!user) {
+      return res.status(403).json({ message: 'User not found' });
+    }
+
+    // التحقق من عدم حظر المستخدم
+    if (user.isChatBanned && req.path.includes('/messages')) {
+      return res.status(403).json({ message: 'You are banned from messaging' });
+    }
+
+    // تسجيل النشاط
+    eventMonitor.logUserActivity(decoded.userId, 'api_request', {
+      endpoint: req.path,
+      method: req.method,
+      ip: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+
+    req.user = decoded;
+    req.userDoc = user; // إضافة document المستخدم للاستخدام في endpoints
     next();
-  });
+  } catch (err) {
+    console.error('Authentication error:', err);
+    eventMonitor.updateSystemMetrics('error', 1);
+    return res.status(403).json({ message: 'Invalid token' });
+  }
 };
 
 // نموذج إحصائيات الألعاب
@@ -528,11 +1953,624 @@ const GameStats = mongoose.model('GameStats', GameStatsSchema);
 
 // فحص صحة الخادم
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
+  res.json({
+    status: 'OK',
     timestamp: new Date().toISOString(),
     uptime: process.uptime()
   });
+});
+
+// إحصائيات النظام للمديرين
+app.get('/api/admin/system-metrics', authenticateToken, async (req, res) => {
+  try {
+    // التحقق من صلاحيات الأدمن
+    const admin = await User.findById(req.user.userId);
+    if (!admin || !admin.isAdmin) {
+      return res.status(403).json({ message: 'صلاحيات المشرف مطلوبة' });
+    }
+
+    // جمع الإحصائيات
+    const systemMetrics = eventMonitor.getSystemMetrics();
+
+    // إحصائيات قاعدة البيانات
+    const dbStats = {
+      totalUsers: await User.countDocuments(),
+      activeUsers: await User.countDocuments({
+        lastActive: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+      }),
+      totalTransactions: await Transaction.countDocuments(),
+      todayTransactions: await Transaction.countDocuments({
+        createdAt: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) }
+      }),
+      totalGifts: await Gift.countDocuments(),
+      activeVoiceRooms: await VoiceRoom.countDocuments({ isActive: true })
+    };
+
+    // إحصائيات المعاملات حسب النوع
+    const transactionsByType = await Transaction.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+        }
+      },
+      {
+        $group: {
+          _id: '$type',
+          count: { $sum: 1 },
+          totalAmount: { $sum: '$amount' }
+        }
+      }
+    ]);
+
+    // إحصائيات الألعاب
+    const gameStats = await GameStats.aggregate([
+      {
+        $match: {
+          startTime: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+        }
+      },
+      {
+        $group: {
+          _id: '$gameType',
+          gamesPlayed: { $sum: 1 },
+          totalWinAmount: { $sum: '$winAmount' },
+          totalLossAmount: { $sum: '$lossAmount' }
+        }
+      }
+    ]);
+
+    res.json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      systemMetrics,
+      database: dbStats,
+      transactions: transactionsByType,
+      games: gameStats,
+      suspiciousActivities: Array.from(transactionMonitor.suspiciousActivities.entries()).map(
+        ([userId, activities]) => ({
+          userId,
+          activitiesCount: activities.length,
+          lastActivity: activities[activities.length - 1]?.timestamp
+        })
+      )
+    });
+
+  } catch (error) {
+    console.error('خطأ في جلب إحصائيات النظام:', error);
+    res.status(500).json({ message: 'خطأ في جلب الإحصائيات' });
+  }
+});
+
+// تصدير بيانات المعاملات للمديرين
+app.get('/api/admin/export-transactions', authenticateToken, async (req, res) => {
+  try {
+    // التحقق من صلاحيات الأدمن
+    const admin = await User.findById(req.user.userId);
+    if (!admin || !admin.isAdmin) {
+      return res.status(403).json({ message: 'صلاحيات المشرف مطلوبة' });
+    }
+
+    const { startDate, endDate, type, userId } = req.query;
+
+    // بناء الاستعلام
+    const query = {};
+
+    if (startDate && endDate) {
+      query.createdAt = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate)
+      };
+    }
+
+    if (type) {
+      query.type = type;
+    }
+
+    if (userId) {
+      query.user = userId;
+    }
+
+    // جلب المعاملات مع بيانات المستخدمين
+    const transactions = await Transaction.find(query)
+      .populate('user', 'username playerId email')
+      .populate('relatedUser', 'username playerId')
+      .sort({ createdAt: -1 })
+      .limit(10000); // حد أقصى 10,000 معاملة
+
+    res.json({
+      success: true,
+      count: transactions.length,
+      transactions: transactions.map(t => ({
+        id: t._id,
+        user: t.user ? {
+          id: t.user._id,
+          username: t.user.username,
+          playerId: t.user.playerId,
+          email: t.user.email
+        } : null,
+        relatedUser: t.relatedUser ? {
+          id: t.relatedUser._id,
+          username: t.relatedUser.username,
+          playerId: t.relatedUser.playerId
+        } : null,
+        type: t.type,
+        amount: t.amount,
+        currency: t.currency,
+        description: t.description,
+        status: t.status,
+        createdAt: t.createdAt,
+        updatedAt: t.updatedAt
+      })),
+      exportedAt: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('خطأ في تصدير المعاملات:', error);
+    res.status(500).json({ message: 'خطأ في تصدير البيانات' });
+  }
+});
+
+// endpoint للتزامن مع العميل
+app.get('/api/sync/data', authenticateToken, async (req, res) => {
+  try {
+    const { lastSync } = req.query;
+    const userId = req.user.userId;
+
+    // تحديد نقطة البداية للتزامن
+    const syncPoint = lastSync ? new Date(lastSync) : new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    // جلب البيانات المحدثة منذ آخر تزامن
+    const [user, transactions, gifts, notifications] = await Promise.all([
+      User.findById(userId),
+      Transaction.find({
+        user: userId,
+        updatedAt: { $gte: syncPoint }
+      }).sort({ updatedAt: -1 }).limit(100),
+      Gift.find({
+        $or: [
+          { sender: userId },
+          { recipient: userId }
+        ],
+        updatedAt: { $gte: syncPoint }
+      }).populate('sender recipient', 'username profileImage').sort({ updatedAt: -1 }).limit(50),
+      Notification.find({
+        user: userId,
+        updatedAt: { $gte: syncPoint }
+      }).sort({ updatedAt: -1 }).limit(20)
+    ]);
+
+    if (!user) {
+      return res.status(404).json({ message: 'المستخدم غير موجود' });
+    }
+
+    // تجميع التحديثات
+    const updates = [];
+
+    // تحديث بيانات المستخدم
+    updates.push({
+      type: 'profile',
+      data: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        goldCoins: user.goldCoins,
+        pearls: user.pearls,
+        level: user.level,
+        profileImage: user.profileImage,
+        gender: user.gender,
+        lastActive: user.lastActive
+      },
+      timestamp: user.updatedAt
+    });
+
+    // تحديثات الرصيد من المعاملات
+    if (transactions.length > 0) {
+      updates.push({
+        type: 'balance',
+        data: {
+          goldCoins: user.goldCoins,
+          pearls: user.pearls,
+          recentTransactions: transactions.map(t => ({
+            id: t._id,
+            type: t.type,
+            amount: t.amount,
+            currency: t.currency,
+            description: t.description,
+            status: t.status,
+            createdAt: t.createdAt
+          }))
+        },
+        timestamp: transactions[0].updatedAt
+      });
+    }
+
+    // تحديثات الهدايا
+    if (gifts.length > 0) {
+      updates.push({
+        type: 'gifts',
+        data: gifts.map(g => ({
+          id: g._id,
+          sender: g.sender ? {
+            id: g.sender._id,
+            username: g.sender.username,
+            profileImage: g.sender.profileImage
+          } : null,
+          recipient: g.recipient ? {
+            id: g.recipient._id,
+            username: g.recipient.username,
+            profileImage: g.recipient.profileImage
+          } : null,
+          giftType: g.giftType,
+          amount: g.amount,
+          message: g.message,
+          status: g.status,
+          createdAt: g.createdAt
+        })),
+        timestamp: gifts[0].updatedAt
+      });
+    }
+
+    // تحديثات الإشعارات
+    if (notifications.length > 0) {
+      updates.push({
+        type: 'notifications',
+        data: notifications.map(n => ({
+          id: n._id,
+          type: n.type,
+          title: n.title,
+          message: n.message,
+          data: n.data,
+          isRead: n.isRead,
+          createdAt: n.createdAt
+        })),
+        timestamp: notifications[0].updatedAt
+      });
+    }
+
+    // تسجيل النشاط
+    eventMonitor.logUserActivity(userId, 'sync_request', {
+      lastSync: lastSync,
+      updatesCount: updates.length
+    });
+
+    res.json({
+      success: true,
+      hasUpdates: updates.length > 0,
+      updates: updates,
+      syncTimestamp: new Date().toISOString(),
+      serverTime: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('خطأ في التزامن:', error);
+    eventMonitor.updateSystemMetrics('error', 1);
+    res.status(500).json({ message: 'خطأ في التزامن' });
+  }
+});
+
+// فرض التزامن الفوري
+app.post('/api/sync/force', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    // إرسال إشارة تزامن فوري عبر WebSocket
+    broadcastToUser(userId, {
+      type: 'force_sync',
+      data: {
+        timestamp: new Date().toISOString(),
+        reason: 'user_requested'
+      }
+    });
+
+    // تسجيل النشاط
+    eventMonitor.logUserActivity(userId, 'force_sync', {
+      timestamp: new Date().toISOString()
+    });
+
+    res.json({
+      success: true,
+      message: 'تم طلب التزامن الفوري',
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('خطأ في فرض التزامن:', error);
+    res.status(500).json({ message: 'خطأ في فرض التزامن' });
+  }
+});
+
+// ========== BACKUP SYSTEM ENDPOINTS ==========
+
+// جلب قائمة النسخ الاحتياطية (للمديرين فقط)
+app.get('/api/admin/backups', authenticateToken, async (req, res) => {
+  try {
+    // التحقق من صلاحيات الأدمن
+    const admin = await User.findById(req.user.userId);
+    if (!admin || !admin.isAdmin) {
+      return res.status(403).json({ message: 'صلاحيات المشرف مطلوبة' });
+    }
+
+    const backups = backupSystem.getBackupsList();
+
+    res.json({
+      success: true,
+      backups: backups,
+      totalBackups: backups.length,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('خطأ في جلب النسخ الاحتياطية:', error);
+    res.status(500).json({ message: 'خطأ في جلب النسخ الاحتياطية' });
+  }
+});
+
+// إنشاء نسخة احتياطية فورية (للمديرين فقط)
+app.post('/api/admin/backup/create', authenticateToken, async (req, res) => {
+  try {
+    // التحقق من صلاحيات الأدمن
+    const admin = await User.findById(req.user.userId);
+    if (!admin || !admin.isAdmin) {
+      return res.status(403).json({ message: 'صلاحيات المشرف مطلوبة' });
+    }
+
+    console.log(`📦 طلب نسخة احتياطية فورية من المدير: ${admin.username}`);
+
+    const backupInfo = await backupSystem.createFullBackup();
+
+    // تسجيل النشاط
+    eventMonitor.logUserActivity(req.user.userId, 'manual_backup', {
+      backupId: backupInfo.id,
+      timestamp: backupInfo.timestamp
+    });
+
+    res.json({
+      success: true,
+      message: 'تم إنشاء النسخة الاحتياطية بنجاح',
+      backup: backupInfo,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('خطأ في إنشاء النسخة الاحتياطية:', error);
+    eventMonitor.updateSystemMetrics('error', 1);
+    res.status(500).json({
+      message: 'خطأ في إنشاء النسخة الاحتياطية',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// استعادة من نسخة احتياطية (للمديرين فقط - خطير!)
+app.post('/api/admin/backup/restore', authenticateToken, async (req, res) => {
+  try {
+    // التحقق من صلاحيات الأدمن
+    const admin = await User.findById(req.user.userId);
+    if (!admin || !admin.isAdmin) {
+      return res.status(403).json({ message: 'صلاحيات المشرف مطلوبة' });
+    }
+
+    const { backupId, confirmationCode } = req.body;
+
+    if (!backupId) {
+      return res.status(400).json({ message: 'معرف النسخة الاحتياطية مطلوب' });
+    }
+
+    // رمز تأكيد إضافي للحماية
+    if (confirmationCode !== 'RESTORE_CONFIRM_2024') {
+      return res.status(400).json({ message: 'رمز التأكيد غير صحيح' });
+    }
+
+    console.warn(`⚠️ طلب استعادة خطير من المدير: ${admin.username} | النسخة: ${backupId}`);
+
+    // إنشاء نسخة احتياطية قبل الاستعادة
+    const preRestoreBackup = await backupSystem.createFullBackup();
+    console.log(`📦 تم إنشاء نسخة احتياطية قبل الاستعادة: ${preRestoreBackup.id}`);
+
+    const restoreResult = await backupSystem.restoreFromBackup(backupId);
+
+    // تسجيل النشاط الحرج
+    eventMonitor.logUserActivity(req.user.userId, 'system_restore', {
+      backupId: backupId,
+      preRestoreBackup: preRestoreBackup.id,
+      timestamp: new Date().toISOString()
+    });
+
+    // إشعار جميع المديرين
+    const admins = await User.find({ isAdmin: true });
+    admins.forEach(adminUser => {
+      broadcastToUser(adminUser._id.toString(), {
+        type: 'critical_system_restore',
+        data: {
+          restoredBy: admin.username,
+          backupId: backupId,
+          timestamp: new Date().toISOString()
+        }
+      });
+    });
+
+    res.json({
+      success: true,
+      message: 'تمت الاستعادة بنجاح',
+      restore: restoreResult,
+      preRestoreBackup: preRestoreBackup.id,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ خطأ خطير في الاستعادة:', error);
+    eventMonitor.updateSystemMetrics('error', 1);
+    res.status(500).json({
+      message: 'خطأ في الاستعادة',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// إحصائيات الكاش (للمديرين فقط)
+app.get('/api/admin/cache-stats', authenticateToken, async (req, res) => {
+  try {
+    // التحقق من صلاحيات الأدمن
+    const admin = await User.findById(req.user.userId);
+    if (!admin || !admin.isAdmin) {
+      return res.status(403).json({ message: 'صلاحيات المشرف مطلوبة' });
+    }
+
+    const cacheStats = smartCache.getStats();
+    const systemMetrics = eventMonitor.getSystemMetrics();
+
+    res.json({
+      success: true,
+      cache: cacheStats,
+      system: systemMetrics,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('خطأ في جلب إحصائيات الكاش:', error);
+    res.status(500).json({ message: 'خطأ في جلب الإحصائيات' });
+  }
+});
+
+// مسح الكاش (للمديرين فقط)
+app.post('/api/admin/cache-clear', authenticateToken, async (req, res) => {
+  try {
+    // التحقق من صلاحيات الأدمن
+    const admin = await User.findById(req.user.userId);
+    if (!admin || !admin.isAdmin) {
+      return res.status(403).json({ message: 'صلاحيات المشرف مطلوبة' });
+    }
+
+    const { target } = req.body; // 'all', 'user', 'system'
+
+    if (target === 'all') {
+      smartCache.clear();
+    } else if (target === 'user' && req.body.userId) {
+      smartCache.invalidateUserCache(req.body.userId);
+    }
+
+    // تسجيل النشاط
+    eventMonitor.logUserActivity(req.user.userId, 'cache_clear', {
+      target: target,
+      targetUserId: req.body.userId
+    });
+
+    console.log(`🗑️ تم مسح الكاش بواسطة المدير: ${admin.username} | الهدف: ${target}`);
+
+    res.json({
+      success: true,
+      message: 'تم مسح الكاش بنجاح',
+      target: target,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('خطأ في مسح الكاش:', error);
+    res.status(500).json({ message: 'خطأ في مسح الكاش' });
+  }
+});
+
+// ========== ANALYTICS SYSTEM ENDPOINTS ==========
+
+// تقرير التحليلات الشامل (للمديرين فقط)
+app.get('/api/admin/analytics/report', authenticateToken, async (req, res) => {
+  try {
+    // التحقق من صلاحيات الأدمن
+    const admin = await User.findById(req.user.userId);
+    if (!admin || !admin.isAdmin) {
+      return res.status(403).json({ message: 'صلاحيات المشرف مطلوبة' });
+    }
+
+    const report = analyticsSystem.getComprehensiveReport();
+
+    // إضافة بيانات إضافية من قاعدة البيانات
+    const [totalUsers, totalTransactions, totalGifts, activeVoiceRooms] = await Promise.all([
+      User.countDocuments(),
+      Transaction.countDocuments(),
+      Gift.countDocuments(),
+      VoiceRoom.countDocuments({ isActive: true })
+    ]);
+
+    const enhancedReport = {
+      ...report,
+      database: {
+        totalUsers,
+        totalTransactions,
+        totalGifts,
+        activeVoiceRooms
+      },
+      generatedAt: new Date().toISOString()
+    };
+
+    res.json({
+      success: true,
+      report: enhancedReport,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('خطأ في جلب تقرير التحليلات:', error);
+    res.status(500).json({ message: 'خطأ في جلب التقرير' });
+  }
+});
+
+// البيانات الفورية (للمديرين فقط)
+app.get('/api/admin/analytics/realtime', authenticateToken, async (req, res) => {
+  try {
+    // التحقق من صلاحيات الأدمن
+    const admin = await User.findById(req.user.userId);
+    if (!admin || !admin.isAdmin) {
+      return res.status(403).json({ message: 'صلاحيات المشرف مطلوبة' });
+    }
+
+    const realTimeData = analyticsSystem.getRealTimeData();
+    const systemMetrics = eventMonitor.getSystemMetrics();
+    const cacheStats = smartCache.getStats();
+
+    res.json({
+      success: true,
+      realTime: realTimeData,
+      system: systemMetrics,
+      cache: cacheStats,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('خطأ في جلب البيانات الفورية:', error);
+    res.status(500).json({ message: 'خطأ في جلب البيانات الفورية' });
+  }
+});
+
+// تسجيل حدث مخصص
+app.post('/api/analytics/track', authenticateToken, async (req, res) => {
+  try {
+    const { category, action, label, value } = req.body;
+
+    if (!category || !action) {
+      return res.status(400).json({ message: 'الفئة والإجراء مطلوبان' });
+    }
+
+    // تسجيل الحدث
+    analyticsSystem.trackEvent(category, action, label || '', value || 0, req.user.userId);
+
+    // تسجيل في مراقب الأحداث أيضاً
+    eventMonitor.logUserActivity(req.user.userId, 'custom_event', {
+      category,
+      action,
+      label,
+      value
+    });
+
+    res.json({
+      success: true,
+      message: 'تم تسجيل الحدث بنجاح',
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('خطأ في تسجيل الحدث:', error);
+    res.status(500).json({ message: 'خطأ في تسجيل الحدث' });
+  }
 });
 
 app.get('/', (req, res) => {
@@ -684,6 +2722,9 @@ app.post('/api/auth/login', async (req, res) => {
     user.status = 'online';
     await user.save();
 
+    // تسجيل في نظام التحليلات
+    analyticsSystem.trackEvent('user', 'login', 'success', 1, user._id.toString());
+
     res.json({
       message: 'تم تسجيل الدخول بنجاح',
       token,
@@ -819,9 +2860,13 @@ app.get('/api/users/me', authenticateToken, async (req, res) => {
   }
 });
 
-// تحديث الملف الشخصي للمستخدم الحالي
+// تحديث الملف الشخصي للمستخدم الحالي مع ضمان التزامن
 app.put('/api/profile/update', authenticateToken, async (req, res) => {
+  const session = await mongoose.startSession();
+
   try {
+    await session.startTransaction();
+
     const { profileImage, gender, username, email } = req.body;
 
     console.log('🔄 Profile update request for user:', req.user.userId);
@@ -832,78 +2877,200 @@ app.put('/api/profile/update', authenticateToken, async (req, res) => {
       email
     });
 
-    const user = await User.findById(req.user.userId);
+    // التحقق من صحة البيانات
+    if (username && (username.length < 3 || username.length > 20)) {
+      await session.abortTransaction();
+      return res.status(400).json({ message: 'اسم المستخدم يجب أن يكون بين 3-20 حرف' });
+    }
+
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      await session.abortTransaction();
+      return res.status(400).json({ message: 'البريد الإلكتروني غير صحيح' });
+    }
+
+    if (gender && !['male', 'female'].includes(gender)) {
+      await session.abortTransaction();
+      return res.status(400).json({ message: 'الجنس غير صحيح' });
+    }
+
+    // البحث عن المستخدم مع قفل للقراءة
+    const user = await User.findById(req.user.userId).session(session);
     if (!user) {
+      await session.abortTransaction();
       return res.status(404).json({ message: 'المستخدم غير موجود' });
     }
 
+    // إعداد البيانات المحدثة
+    const updateData = {
+      lastActive: new Date()
+    };
+
     // تحديث البيانات المرسلة فقط
     if (profileImage !== undefined) {
-      user.profileImage = profileImage;
+      updateData.profileImage = profileImage;
       console.log('📸 Profile image updated');
     }
 
     if (gender !== undefined) {
-      user.gender = gender;
+      updateData.gender = gender;
       console.log('👤 Gender updated to:', gender);
     }
 
     if (username !== undefined) {
       // التحقق من عدم وجود اسم المستخدم مع مستخدم آخر
-      const existingUser = await User.findOne({ username, _id: { $ne: req.user.userId } });
+      const existingUser = await User.findOne({
+        username,
+        _id: { $ne: req.user.userId }
+      }).session(session);
+
       if (existingUser) {
+        await session.abortTransaction();
         return res.status(400).json({ message: 'اسم المستخدم موجود بالفعل' });
       }
-      user.username = username;
+      updateData.username = username;
       console.log('📝 Username updated to:', username);
     }
 
     if (email !== undefined) {
       // التحقق من عدم وجود البريد الإلكتروني مع مستخدم آخر
-      const existingUser = await User.findOne({ email, _id: { $ne: req.user.userId } });
+      const existingUser = await User.findOne({
+        email,
+        _id: { $ne: req.user.userId }
+      }).session(session);
+
       if (existingUser) {
+        await session.abortTransaction();
         return res.status(400).json({ message: 'البريد الإلكتروني موجود بالفعل' });
       }
-      user.email = email;
+      updateData.email = email;
       console.log('📧 Email updated to:', email);
     }
 
-    // حفظ التغييرات
-    await user.save();
-    console.log('✅ Profile updated successfully for user:', user.username);
+    // تحديث البيانات
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user.userId,
+      { $set: updateData },
+      {
+        new: true,
+        session: session,
+        runValidators: true
+      }
+    );
+
+    if (!updatedUser) {
+      await session.abortTransaction();
+      return res.status(500).json({ message: 'فشل في تحديث الملف الشخصي' });
+    }
+
+    // تأكيد المعاملة
+    await session.commitTransaction();
+    console.log('✅ Profile updated successfully for user:', updatedUser.username);
+
+    // إرسال تحديث فوري عبر WebSocket لجميع جلسات المستخدم
+    broadcastToUser(req.user.userId, {
+      type: 'profile_updated',
+      data: {
+        user: {
+          id: updatedUser._id,
+          playerId: updatedUser.playerId,
+          username: updatedUser.username,
+          email: updatedUser.email,
+          goldCoins: updatedUser.goldCoins,
+          pearls: updatedUser.pearls,
+          level: updatedUser.level,
+          isAdmin: updatedUser.isAdmin,
+          profileImage: updatedUser.profileImage,
+          gender: updatedUser.gender,
+          status: updatedUser.status,
+          lastActive: updatedUser.lastActive
+        },
+        timestamp: new Date().toISOString()
+      }
+    });
+
+    // تحديث معلومات المستخدم في الغرف الصوتية إذا كان متصل
+    const voiceRooms = await VoiceRoom.find({
+      $or: [
+        { 'seats.user': updatedUser._id },
+        { 'listeners.user': updatedUser._id }
+      ]
+    });
+
+    // إرسال تحديث للغرف الصوتية
+    voiceRooms.forEach(room => {
+      broadcastToAll({
+        type: 'voice_room_user_updated',
+        data: {
+          roomId: room._id,
+          user: {
+            id: updatedUser._id,
+            username: updatedUser.username,
+            profileImage: updatedUser.profileImage,
+            gender: updatedUser.gender
+          },
+          timestamp: new Date().toISOString()
+        }
+      });
+    });
 
     // إرجاع البيانات المحدثة
     res.json({
-      id: user._id,
-      playerId: user.playerId,
-      username: user.username,
-      email: user.email,
-      goldCoins: user.goldCoins,
-      pearls: user.pearls,
-      level: user.level,
-      isAdmin: user.isAdmin,
-      profileImage: user.profileImage,
-      gender: user.gender,
-      status: user.status,
-      lastActive: user.lastActive
+      success: true,
+      id: updatedUser._id,
+      playerId: updatedUser.playerId,
+      username: updatedUser.username,
+      email: updatedUser.email,
+      goldCoins: updatedUser.goldCoins,
+      pearls: updatedUser.pearls,
+      level: updatedUser.level,
+      isAdmin: updatedUser.isAdmin,
+      profileImage: updatedUser.profileImage,
+      gender: updatedUser.gender,
+      status: updatedUser.status,
+      lastActive: updatedUser.lastActive,
+      timestamp: new Date().toISOString()
     });
+
   } catch (error) {
+    await session.abortTransaction();
     console.error('❌ Profile update error:', error);
-    res.status(500).json({ message: 'خطأ في تحديث الملف الشخصي' });
+
+    // تسجيل مفصل للخطأ
+    console.error('تفاصيل خطأ البروفايل:', {
+      userId: req.user.userId,
+      updateData: req.body,
+      error: error.message
+    });
+
+    res.status(500).json({
+      message: 'خطأ في تحديث الملف الشخصي',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  } finally {
+    await session.endSession();
   }
 });
 
-// جلب البيانات الكاملة للمستخدم الحالي
+// جلب البيانات الكاملة للمستخدم الحالي مع الكاش
 app.get('/api/profile/me', authenticateToken, async (req, res) => {
   try {
     console.log('📡 GET /api/profile/me called for user:', req.user.userId);
-    const user = await User.findById(req.user.userId);
+
+    // محاولة جلب من الكاش أولاً
+    let user = await smartCache.cacheUser(req.user.userId);
+
     if (!user) {
       console.log('❌ User not found:', req.user.userId);
       return res.status(404).json({ message: 'المستخدم غير موجود' });
     }
 
-    console.log('✅ User found, sending complete data for:', user.username);
+    const fromCache = !!smartCache.get(`user:${req.user.userId}`);
+    console.log('✅ User found, sending complete data for:', user.username, fromCache ? '(from cache)' : '(from DB)');
+
+    // تسجيل النشاط
+    eventMonitor.logUserActivity(req.user.userId, 'profile_access', {
+      fromCache: fromCache
+    });
 
     // إرجاع البيانات الكاملة
     res.json({
@@ -930,10 +3097,12 @@ app.get('/api/profile/me', authenticateToken, async (req, res) => {
       achievements: user.achievements || 0,
       streak: user.streak || 0,
       rating: user.rating || 0,
-      popularity: user.popularity || 0
+      popularity: user.popularity || 0,
+      _cached: fromCache
     });
   } catch (error) {
     console.error('❌ Get profile error:', error);
+    eventMonitor.updateSystemMetrics('error', 1);
     res.status(500).json({ message: 'خطأ في جلب بيانات الملف الشخصي' });
   }
 });
@@ -2609,31 +4778,61 @@ app.get('/api/messages/:userId', authenticateToken, async (req, res) => {
   }
 });
 
-// إرسال رسالة
+// إرسال رسالة مع ضمان التزامن
 app.post('/api/messages', authenticateToken, async (req, res) => {
+  const session = await mongoose.startSession();
+
   try {
+    await session.startTransaction();
+
     const { recipientId, content, messageType = 'text' } = req.body;
 
     if (!recipientId || !content) {
+      await session.abortTransaction();
       return res.status(400).json({ message: 'معرف المستقبل والمحتوى مطلوبان' });
     }
 
+    if (content.length > 500) {
+      await session.abortTransaction();
+      return res.status(400).json({ message: 'الرسالة طويلة جداً (الحد الأقصى 500 حرف)' });
+    }
+
     // الحصول على بيانات المرسل
-    const sender = await User.findById(req.user.userId);
+    const sender = await User.findById(req.user.userId).session(session);
     if (!sender) {
+      await session.abortTransaction();
       return res.status(404).json({ message: 'خطأ في بيانات المرسل' });
+    }
+
+    // التحقق من عدم حظر المحادثة
+    if (sender.isChatBanned) {
+      await session.abortTransaction();
+      return res.status(403).json({ message: 'تم حظرك من المحادثة' });
     }
 
     // تحديد ما إذا كان recipientId هو ObjectId أم Player ID
     let recipient;
     if (mongoose.Types.ObjectId.isValid(recipientId)) {
-      recipient = await User.findById(recipientId);
+      recipient = await User.findById(recipientId).session(session);
     } else {
-      recipient = await User.findOne({ playerId: recipientId });
+      recipient = await User.findOne({ playerId: recipientId }).session(session);
     }
 
     if (!recipient) {
+      await session.abortTransaction();
       return res.status(404).json({ message: 'المستخدم المستهدف غير موجود' });
+    }
+
+    // التحقق من حدود الإرسال (مكافحة الإزعاج)
+    const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
+    const recentMessages = await Message.countDocuments({
+      sender: req.user.userId,
+      createdAt: { $gte: oneMinuteAgo }
+    }).session(session);
+
+    if (recentMessages >= 10) {
+      await session.abortTransaction();
+      return res.status(429).json({ message: 'تم إرسال رسائل كثيرة. انتظر قليلاً' });
     }
 
     const message = new Message({
@@ -2641,26 +4840,96 @@ app.post('/api/messages', authenticateToken, async (req, res) => {
       senderPlayerId: sender.playerId, // Player ID الصغير
       recipient: recipient._id, // MongoDB ObjectId للتوافق
       recipientPlayerId: recipient.playerId, // Player ID الصغير
-      content,
+      content: content.trim(),
       messageType
     });
-    await message.save();
 
-    // لا نرسل إشعار للرسائل العادية - المحادثة متزامنة
+    await message.save({ session });
 
+    // تحديث آخر نشاط للمستخدمين
+    await Promise.all([
+      User.findByIdAndUpdate(req.user.userId, { lastActive: new Date() }, { session }),
+      User.findByIdAndUpdate(recipient._id, { lastActive: new Date() }, { session })
+    ]);
+
+    // تأكيد المعاملة
+    await session.commitTransaction();
+
+    // جلب الرسالة مع البيانات المطلوبة
     const populatedMessage = await Message.findById(message._id)
       .populate('sender', 'username profileImage playerId')
       .populate('recipient', 'username profileImage playerId');
 
-    // WebSocket سيتم إرساله من العميل بعد نجاح الحفظ
+    // إرسال فوري عبر WebSocket للمرسل والمستقبل
+    const messageData = {
+      id: populatedMessage._id,
+      sender: {
+        id: populatedMessage.sender._id,
+        username: populatedMessage.sender.username,
+        profileImage: populatedMessage.sender.profileImage,
+        playerId: populatedMessage.sender.playerId
+      },
+      recipient: {
+        id: populatedMessage.recipient._id,
+        username: populatedMessage.recipient.username,
+        profileImage: populatedMessage.recipient.profileImage,
+        playerId: populatedMessage.recipient.playerId
+      },
+      content: populatedMessage.content,
+      messageType: populatedMessage.messageType,
+      isRead: populatedMessage.isRead,
+      createdAt: populatedMessage.createdAt,
+      timestamp: new Date().toISOString()
+    };
+
+    // إرسال للمرسل والمستقبل
+    [req.user.userId, recipient._id.toString()].forEach(userId => {
+      broadcastToUser(userId, {
+        type: 'new_private_message',
+        data: messageData
+      });
+    });
+
+    // تسجيل النشاط
+    eventMonitor.logUserActivity(req.user.userId, 'send_message', {
+      recipientId: recipient._id.toString(),
+      messageLength: content.length,
+      messageType: messageType
+    });
+
+    // تسجيل في نظام التحليلات
+    analyticsSystem.trackEvent('social', 'message_sent', messageType, content.length, req.user.userId);
+    analyticsSystem.trackEvent('social', 'message_received', messageType, content.length, recipient._id.toString());
+
+    // تسجيل للمراقبة
+    console.log(`💬 رسالة خاصة - من: ${sender.username} إلى: ${recipient.username} | الطول: ${content.length}`);
 
     res.json({
+      success: true,
       message: 'تم إرسال الرسالة بنجاح',
-      messageData: populatedMessage
+      messageData: messageData
     });
+
   } catch (error) {
-    console.error('Send message error:', error);
-    res.status(500).json({ message: 'خطأ في إرسال الرسالة' });
+    await session.abortTransaction();
+    console.error('❌ خطأ في إرسال الرسالة:', error);
+
+    // تسجيل مفصل للخطأ
+    console.error('تفاصيل خطأ الرسالة:', {
+      senderId: req.user.userId,
+      recipientId: req.body.recipientId,
+      contentLength: req.body.content?.length,
+      error: error.message
+    });
+
+    eventMonitor.updateSystemMetrics('error', 1);
+
+    res.status(500).json({
+      message: 'خطأ في إرسال الرسالة',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  } finally {
+    await session.endSession();
   }
 });
 
@@ -2676,61 +4945,137 @@ app.get('/api/profile/gifts', authenticateToken, async (req, res) => {
   }
 });
 
-// إرسال هدية
+// إرسال هدية مع ضمان ACID
 app.post('/api/profile/send-gift', authenticateToken, async (req, res) => {
+  const session = await mongoose.startSession();
+
   try {
+    await session.startTransaction();
+
     const { toUserId, giftType, amount, message } = req.body;
-    const fromUser = await User.findById(req.user.userId);
+
+    // التحقق من صحة البيانات
+    if (!toUserId || !giftType || !amount) {
+      await session.abortTransaction();
+      return res.status(400).json({ message: 'بيانات غير مكتملة' });
+    }
+
+    if (amount <= 0 || amount > 100000) {
+      await session.abortTransaction();
+      return res.status(400).json({ message: 'مبلغ الهدية غير صحيح (1-100000)' });
+    }
+
+    if (!['gold', 'pearls'].includes(giftType)) {
+      await session.abortTransaction();
+      return res.status(400).json({ message: 'نوع الهدية غير صحيح' });
+    }
+
+    // البحث عن المستخدمين مع قفل للقراءة
+    const fromUser = await User.findById(req.user.userId).session(session);
+    const toUser = await User.findById(toUserId).session(session);
 
     if (!fromUser) {
+      await session.abortTransaction();
       return res.status(404).json({ message: 'المستخدم غير موجود' });
     }
 
-    const toUser = await User.findById(toUserId);
     if (!toUser) {
+      await session.abortTransaction();
       return res.status(404).json({ message: 'المستخدم المستهدف غير موجود' });
     }
 
+    if (fromUser._id.toString() === toUser._id.toString()) {
+      await session.abortTransaction();
+      return res.status(400).json({ message: 'لا يمكن إرسال هدية لنفسك' });
+    }
+
     // التحقق من الرصيد
-    if (giftType === 'gold' && fromUser.goldCoins < amount) {
-      return res.status(400).json({ message: 'رصيد العملات الذهبية غير كافي' });
+    const currentBalance = giftType === 'gold' ? fromUser.goldCoins : fromUser.pearls;
+    if (currentBalance < amount) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        message: `رصيد غير كافي. الرصيد الحالي: ${currentBalance}`,
+        currentBalance: currentBalance,
+        required: amount
+      });
     }
 
-    if (giftType === 'pearls' && fromUser.pearls < amount) {
-      return res.status(400).json({ message: 'رصيد اللآلئ غير كافي' });
+    // التحقق من حدود الإرسال اليومية لمنع الغش
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const dailyGifts = await Gift.aggregate([
+      {
+        $match: {
+          sender: fromUser._id,
+          createdAt: { $gte: today },
+          status: 'sent'
+        }
+      },
+      {
+        $group: {
+          _id: '$giftType',
+          totalAmount: { $sum: '$amount' }
+        }
+      }
+    ]).session(session);
+
+    const dailyLimit = giftType === 'gold' ? 50000 : 100; // حد يومي
+    const todayTotal = dailyGifts.find(g => g._id === giftType)?.totalAmount || 0;
+
+    if (todayTotal + amount > dailyLimit) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        message: `تجاوزت الحد اليومي للهدايا (${dailyLimit} ${giftType})`,
+        dailyUsed: todayTotal,
+        dailyLimit: dailyLimit
+      });
     }
 
-    // تحويل الهدية
-    if (giftType === 'gold') {
-      fromUser.goldCoins -= amount;
-      toUser.goldCoins += amount;
-    } else if (giftType === 'pearls') {
-      fromUser.pearls -= amount;
-      toUser.pearls += amount;
+    // تحديث الأرصدة
+    const fromUserUpdate = await User.findByIdAndUpdate(
+      req.user.userId,
+      {
+        $inc: giftType === 'gold' ? { goldCoins: -amount } : { pearls: -amount },
+        $set: { lastActive: new Date() }
+      },
+      { new: true, session: session }
+    );
+
+    const toUserUpdate = await User.findByIdAndUpdate(
+      toUserId,
+      {
+        $inc: giftType === 'gold' ? { goldCoins: amount } : { pearls: amount },
+        $set: { lastActive: new Date() }
+      },
+      { new: true, session: session }
+    );
+
+    if (!fromUserUpdate || !toUserUpdate) {
+      await session.abortTransaction();
+      return res.status(500).json({ message: 'فشل في تحديث الأرصدة' });
     }
 
-    await fromUser.save();
-    await toUser.save();
-
-    // حفظ سجل الهدية في قاعدة البيانات
+    // حفظ سجل الهدية
     const gift = new Gift({
       sender: req.user.userId,
       recipient: toUserId,
       giftType,
       amount,
-      message,
+      message: message || '',
       status: 'sent'
     });
-    await gift.save();
+    await gift.save({ session });
 
     // حفظ سجل المعاملات
     const senderTransaction = new Transaction({
       user: req.user.userId,
       type: 'gift_sent',
-      amount: -amount,
+      amount: amount,
       currency: giftType,
-      description: `هدية مرسلة إلى ${toUser.username}`,
-      relatedUser: toUserId
+      description: `هدية مرسلة إلى ${toUser.username} - ${message || 'بدون رسالة'}`,
+      relatedUser: toUserId,
+      status: 'completed'
     });
 
     const recipientTransaction = new Transaction({
@@ -2738,12 +5083,47 @@ app.post('/api/profile/send-gift', authenticateToken, async (req, res) => {
       type: 'gift_received',
       amount: amount,
       currency: giftType,
-      description: `هدية مستلمة من ${fromUser.username}`,
-      relatedUser: req.user.userId
+      description: `هدية مستلمة من ${fromUser.username} - ${message || 'بدون رسالة'}`,
+      relatedUser: req.user.userId,
+      status: 'completed'
     });
 
-    await senderTransaction.save();
-    await recipientTransaction.save();
+    await senderTransaction.save({ session });
+    await recipientTransaction.save({ session });
+
+    // تأكيد المعاملة
+    await session.commitTransaction();
+
+    // إرسال تحديثات فورية عبر WebSocket
+    broadcastToUser(req.user.userId, {
+      type: 'balance_update',
+      data: {
+        newBalance: giftType === 'gold' ? fromUserUpdate.goldCoins : fromUserUpdate.pearls,
+        change: -amount,
+        currency: giftType,
+        reason: 'gift_sent',
+        timestamp: new Date().toISOString()
+      }
+    });
+
+    broadcastToUser(toUserId, {
+      type: 'gift_received',
+      data: {
+        gift: {
+          id: gift._id,
+          sender: {
+            id: fromUser._id,
+            username: fromUser.username,
+            avatar: fromUser.avatar
+          },
+          giftType,
+          amount,
+          message: message || '',
+          timestamp: new Date().toISOString()
+        },
+        newBalance: giftType === 'gold' ? toUserUpdate.goldCoins : toUserUpdate.pearls
+      }
+    });
 
     // إنشاء إشعار للمستقبل
     await createNotification(
@@ -2754,22 +5134,51 @@ app.post('/api/profile/send-gift', authenticateToken, async (req, res) => {
       {
         giftType,
         amount,
-        giftId: gift._id
+        giftId: gift._id,
+        message: message || ''
       },
       req.user.userId
     );
 
+    // تسجيل في نظام التحليلات
+    analyticsSystem.trackEvent('financial', 'gift_sent', giftType, amount, req.user.userId);
+    analyticsSystem.trackEvent('social', 'gift_interaction', 'sent', amount, req.user.userId);
+    analyticsSystem.trackEvent('financial', 'gift_received', giftType, amount, toUserId);
+    analyticsSystem.trackEvent('social', 'gift_interaction', 'received', amount, toUserId);
+
+    // تسجيل للمراقبة
+    console.log(`🎁 هدية مرسلة - من: ${fromUser.username} إلى: ${toUser.username} | النوع: ${giftType} | المبلغ: ${amount}`);
+
     res.json({
+      success: true,
       message: `تم إرسال ${amount} ${giftType === 'gold' ? 'عملة ذهبية' : 'لؤلؤة'} إلى ${toUser.username}`,
       fromUserBalance: {
-        goldCoins: fromUser.goldCoins,
-        pearls: fromUser.pearls
+        goldCoins: fromUserUpdate.goldCoins,
+        pearls: fromUserUpdate.pearls
       },
-      giftId: gift._id
+      giftId: gift._id,
+      timestamp: new Date().toISOString()
     });
+
   } catch (error) {
-    console.error('Send gift error:', error);
-    res.status(500).json({ message: 'خطأ في إرسال الهدية' });
+    await session.abortTransaction();
+    console.error('❌ خطأ في إرسال الهدية:', error);
+
+    // تسجيل مفصل للخطأ
+    console.error('تفاصيل خطأ الهدية:', {
+      fromUserId: req.user.userId,
+      toUserId: req.body.toUserId,
+      giftType: req.body.giftType,
+      amount: req.body.amount,
+      error: error.message
+    });
+
+    res.status(500).json({
+      message: 'خطأ في إرسال الهدية',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  } finally {
+    await session.endSession();
   }
 });
 
@@ -3643,25 +6052,100 @@ app.put('/api/users/admin/manage-user-image', authenticateToken, async (req, res
 
 // ========== GAME ECONOMY ENDPOINTS ==========
 
-// تحديث رصيد اللاعب
+// تحديث رصيد اللاعب مع ضمان ACID
 app.post('/api/users/update-balance', authenticateToken, async (req, res) => {
-  try {
-    const { balanceChange, gameType, sessionId, gameResult } = req.body;
-    const user = await User.findById(req.user.userId);
+  const session = await mongoose.startSession();
 
+  try {
+    await session.startTransaction();
+
+    const { balanceChange, gameType, sessionId, gameResult } = req.body;
+
+    // التحقق من صحة البيانات
+    if (!balanceChange || !gameType || !sessionId) {
+      await session.abortTransaction();
+      return res.status(400).json({ message: 'بيانات غير مكتملة' });
+    }
+
+    // التحقق من صحة sessionId لمنع التلاعب
+    if (!sessionId.match(/^[a-zA-Z0-9_-]+$/)) {
+      await session.abortTransaction();
+      return res.status(400).json({ message: 'معرف الجلسة غير صحيح' });
+    }
+
+    // البحث عن المستخدم مع قفل للقراءة
+    const user = await User.findById(req.user.userId).session(session);
     if (!user) {
+      await session.abortTransaction();
       return res.status(404).json({ message: 'المستخدم غير موجود' });
     }
 
-    // التحقق من صحة التغيير
-    const newBalance = (user.goldCoins || 0) + balanceChange;
+    // التحقق من الرصيد الحالي
+    const currentBalance = user.goldCoins || 0;
+    const newBalance = currentBalance + balanceChange;
+
     if (newBalance < 0) {
-      return res.status(400).json({ message: 'رصيد غير كافي' });
+      await session.abortTransaction();
+      return res.status(400).json({
+        message: 'رصيد غير كافي',
+        currentBalance: currentBalance,
+        requestedChange: balanceChange
+      });
+    }
+
+    // التحقق من حدود الربح/الخسارة لمنع الغش
+    const maxChangeAllowed = Math.min(currentBalance * 0.5, 50000); // حد أقصى 50% من الرصيد أو 50,000
+    if (Math.abs(balanceChange) > maxChangeAllowed) {
+      await session.abortTransaction();
+      return res.status(400).json({
+        message: 'التغيير المطلوب يتجاوز الحد المسموح',
+        maxAllowed: maxChangeAllowed,
+        requested: Math.abs(balanceChange)
+      });
+    }
+
+    // التحقق من عدم وجود معاملة مكررة لنفس الجلسة
+    const existingTransaction = await Transaction.findOne({
+      user: req.user.userId,
+      description: { $regex: sessionId }
+    }).session(session);
+
+    if (existingTransaction) {
+      await session.abortTransaction();
+      return res.status(409).json({ message: 'معاملة مكررة - تم رفض الطلب' });
     }
 
     // تحديث الرصيد
-    user.goldCoins = newBalance;
-    await user.save();
+    const updateResult = await User.findByIdAndUpdate(
+      req.user.userId,
+      {
+        $inc: { goldCoins: balanceChange },
+        $set: { lastActive: new Date() }
+      },
+      {
+        new: true,
+        session: session,
+        runValidators: true
+      }
+    );
+
+    if (!updateResult) {
+      await session.abortTransaction();
+      return res.status(500).json({ message: 'فشل في تحديث الرصيد' });
+    }
+
+    // حفظ سجل المعاملة
+    const transactionType = balanceChange > 0 ? 'game_win' : 'game_loss';
+    const transaction = new Transaction({
+      user: req.user.userId,
+      type: transactionType,
+      amount: Math.abs(balanceChange),
+      currency: 'gold',
+      description: `${gameType} - جلسة: ${sessionId} - ${balanceChange > 0 ? 'ربح' : 'خسارة'}`,
+      status: 'completed'
+    });
+
+    await transaction.save({ session });
 
     // حفظ إحصائيات اللعبة
     const gameStats = new GameStats({
@@ -3669,27 +6153,75 @@ app.post('/api/users/update-balance', authenticateToken, async (req, res) => {
       gameType: gameType,
       sessionId: sessionId,
       startTime: new Date(),
-      betAmount: gameResult.lossAmount || 0,
-      winAmount: gameResult.winAmount || 0,
-      lossAmount: gameResult.lossAmount || 0,
+      betAmount: gameResult?.lossAmount || 0,
+      winAmount: gameResult?.winAmount || 0,
+      lossAmount: gameResult?.lossAmount || 0,
       netResult: balanceChange,
-      playerScore: gameResult.playerScore || 0,
-      skillFactor: gameResult.skillFactor || 0,
-      economicFactor: gameResult.economicFactor || 0,
-      winProbability: gameResult.probability || 0
+      playerScore: gameResult?.playerScore || 0,
+      skillFactor: gameResult?.skillFactor || 0,
+      economicFactor: gameResult?.economicFactor || 0,
+      winProbability: gameResult?.probability || 0
     });
 
-    await gameStats.save();
+    await gameStats.save({ session });
+
+    // تأكيد المعاملة
+    await session.commitTransaction();
+
+    // إرسال تحديث فوري عبر WebSocket لجميع جلسات المستخدم
+    broadcastToUser(req.user.userId, {
+      type: 'balance_update',
+      data: {
+        newBalance: updateResult.goldCoins,
+        change: balanceChange,
+        gameType: gameType,
+        transactionId: transaction._id,
+        timestamp: new Date().toISOString()
+      }
+    });
+
+    // تسجيل النشاط في المراقب
+    eventMonitor.logUserActivity(req.user.userId, 'balance_update', {
+      amount: balanceChange,
+      gameType: gameType,
+      newBalance: updateResult.goldCoins,
+      sessionId: sessionId
+    });
+
+    // تسجيل في نظام التحليلات
+    analyticsSystem.trackEvent('game', balanceChange > 0 ? 'game_win' : 'game_loss', gameType, Math.abs(balanceChange), req.user.userId);
+    analyticsSystem.trackEvent('financial', balanceChange > 0 ? 'deposit' : 'withdrawal', 'gold', Math.abs(balanceChange), req.user.userId);
+
+    // تسجيل المعاملة للمراقبة
+    console.log(`💰 تحديث رصيد - المستخدم: ${user.username} | التغيير: ${balanceChange} | الرصيد الجديد: ${updateResult.goldCoins} | اللعبة: ${gameType}`);
 
     res.json({
       success: true,
-      newBalance: newBalance,
-      change: balanceChange
+      newBalance: updateResult.goldCoins,
+      change: balanceChange,
+      transactionId: transaction._id,
+      timestamp: new Date().toISOString()
     });
 
   } catch (error) {
-    console.error('خطأ في تحديث الرصيد:', error);
-    res.status(500).json({ message: 'خطأ في تحديث الرصيد' });
+    await session.abortTransaction();
+    console.error('❌ خطأ في تحديث الرصيد:', error);
+
+    // تسجيل مفصل للخطأ
+    console.error('تفاصيل الخطأ:', {
+      userId: req.user.userId,
+      balanceChange: req.body.balanceChange,
+      gameType: req.body.gameType,
+      sessionId: req.body.sessionId,
+      error: error.message
+    });
+
+    res.status(500).json({
+      message: 'خطأ في تحديث الرصيد',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  } finally {
+    await session.endSession();
   }
 });
 
@@ -3815,15 +6347,113 @@ app.use('*', (req, res) => {
 // أنشئ خادم HTTP يدويًا لإرفاق WebSocket
 const httpServer = http.createServer(app);
 
-// إعداد WebSocket على المسار /ws
-const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
+// إعداد WebSocket على المسار /ws مع تحسينات
+const wss = new WebSocketServer({
+  server: httpServer,
+  path: '/ws',
+  perMessageDeflate: false, // تحسين الأداء
+  maxPayload: 1024 * 1024, // 1MB حد أقصى للرسالة
+  clientTracking: true
+});
+
+// نظام Heartbeat لمنع انقطاع الاتصالات
+const heartbeatInterval = setInterval(() => {
+  wss.clients.forEach((socket) => {
+    if (socket.isAlive === false) {
+      console.log('💔 Terminating dead connection');
+      return socket.terminate();
+    }
+
+    socket.isAlive = false;
+    socket.ping();
+  });
+}, 30000); // كل 30 ثانية
+
+// تنظيف عند إغلاق الخادم
+wss.on('close', () => {
+  clearInterval(heartbeatInterval);
+});
 
 // تخزين معلومات العملاء المتصلين
 const connectedClients = new Map(); // userId -> { socket, currentRoomId, userInfo }
 
+// دالة إرسال رسالة لمستخدم محدد عبر جميع جلساته
+function broadcastToUser(userId, message) {
+  try {
+    let sentCount = 0;
+
+    // البحث عن جميع الاتصالات للمستخدم
+    connectedClients.forEach((clientInfo, clientUserId) => {
+      if (clientUserId === userId && clientInfo.socket && clientInfo.socket.readyState === 1) {
+        clientInfo.socket.send(JSON.stringify(message));
+        sentCount++;
+      }
+    });
+
+    // إرسال للجميع إذا لم نجد اتصالات مباشرة (fallback)
+    if (sentCount === 0) {
+      wss.clients.forEach((client) => {
+        if (client.readyState === 1) {
+          client.send(JSON.stringify({
+            ...message,
+            targetUserId: userId
+          }));
+        }
+      });
+    }
+
+    console.log(`📡 رسالة مرسلة للمستخدم ${userId} عبر ${sentCount} اتصال`);
+    return sentCount;
+  } catch (error) {
+    console.error('خطأ في إرسال الرسالة للمستخدم:', error);
+    return 0;
+  }
+}
+
+// دالة إرسال رسالة لجميع المستخدمين المتصلين
+function broadcastToAll(message, excludeUserId = null) {
+  try {
+    let sentCount = 0;
+
+    wss.clients.forEach((client) => {
+      if (client.readyState === 1) {
+        // تخطي المستخدم المستبعد إذا كان محدداً
+        if (excludeUserId) {
+          const clientUserId = Array.from(connectedClients.entries())
+            .find(([userId, clientInfo]) => clientInfo.socket === client)?.[0];
+
+          if (clientUserId === excludeUserId) {
+            return;
+          }
+        }
+
+        client.send(JSON.stringify(message));
+        sentCount++;
+      }
+    });
+
+    console.log(`📡 رسالة مرسلة لجميع المتصلين (${sentCount} عميل)`);
+    return sentCount;
+  } catch (error) {
+    console.error('خطأ في الإرسال العام:', error);
+    return 0;
+  }
+}
+
 wss.on('connection', (socket) => {
   console.log('🔌 WebSocket client connected');
-  socket.send(JSON.stringify({ type: 'connection_established' }));
+  eventMonitor.updateSystemMetrics('connection', 1);
+
+  // إعداد heartbeat لمنع انقطاع الاتصال
+  socket.isAlive = true;
+  socket.on('pong', () => {
+    socket.isAlive = true;
+  });
+
+  socket.send(JSON.stringify({
+    type: 'connection_established',
+    timestamp: new Date().toISOString()
+  }));
 
   // متغير لتخزين معلومات المستخدم لهذا الاتصال
   let currentUserId = null;
@@ -3842,36 +6472,55 @@ wss.on('connection', (socket) => {
         connectedClients.set(currentUserId, {
           socket,
           userInfo: message.data.userInfo,
-          currentRoomId: null
+          currentRoomId: null,
+          connectedAt: new Date()
         });
+
+        // تسجيل النشاط في المراقب
+        eventMonitor.logUserActivity(currentUserId, 'websocket_connected', {
+          userAgent: message.data.userInfo?.userAgent,
+          timestamp: new Date().toISOString()
+        });
+
         console.log(`👤 User ${currentUserId} connected via WebSocket`);
       }
 
-      // رسائل المحادثة الخاصة
+      // رسائل المحادثة الخاصة - محسنة للتزامن
       if (message.type === 'private_message') {
-        // رسالة خاصة - بث للجميع (سيتم تصفيتها في العميل)
         const broadcastMessage = {
           type: 'new_message',
           messageData: message.data.messageData,
           recipientId: message.data.recipientId,
-          senderId: message.data.messageData.sender._id
+          senderId: message.data.messageData.sender._id,
+          timestamp: new Date().toISOString()
         };
 
-        console.log('📤 Broadcasting message to all clients:', {
+        console.log('📤 Broadcasting private message:', {
           recipientId: broadcastMessage.recipientId,
           senderId: broadcastMessage.senderId,
-          content: message.data.messageData.content
+          content: message.data.messageData.content?.substring(0, 50) + '...'
         });
 
+        // إرسال للمرسل والمستقبل فقط (محسن)
         let sentCount = 0;
-        wss.clients.forEach((client) => {
-          if (client.readyState === 1) {
-            client.send(JSON.stringify(broadcastMessage));
-            sentCount++;
-          }
+        const targetUserIds = [broadcastMessage.senderId, broadcastMessage.recipientId];
+
+        targetUserIds.forEach(userId => {
+          const userSentCount = broadcastToUser(userId, broadcastMessage);
+          sentCount += userSentCount;
         });
 
-        console.log(`📡 Message sent to ${sentCount} connected clients`);
+        // Fallback: إرسال للجميع إذا لم نجد الأهداف المحددة
+        if (sentCount === 0) {
+          wss.clients.forEach((client) => {
+            if (client.readyState === 1) {
+              client.send(JSON.stringify(broadcastMessage));
+              sentCount++;
+            }
+          });
+        }
+
+        console.log(`📡 Private message sent to ${sentCount} clients`);
       }
 
       // رسائل الغرفة الصوتية
