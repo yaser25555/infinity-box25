@@ -20,6 +20,10 @@ export class WebRTCVoiceService {
   private isMuted = false;
   private roomId: string | null = null;
   private userId: string | null = null;
+
+  // منع التكرار
+  private processingOffers: Set<string> = new Set();
+  private connectionAttempts: Map<string, number> = new Map();
   
   // Voice Activity Detection
   private audioContext: AudioContext | null = null;
@@ -126,6 +130,10 @@ export class WebRTCVoiceService {
 
       this.isJoined = false;
       this.remoteUsers.clear();
+
+      // تنظيف متغيرات منع التكرار
+      this.processingOffers.clear();
+      this.connectionAttempts.clear();
       
     } catch (error) {
       console.error('❌ Error leaving voice room:', error);
@@ -227,10 +235,33 @@ export class WebRTCVoiceService {
   private async handleOffer(data: any) {
     try {
       const { offer, fromUserId } = data;
+
+      // منع معالجة offers متكررة من نفس المستخدم
+      if (this.processingOffers.has(fromUserId)) {
+        console.log('⏭️ Already processing offer from:', fromUserId);
+        return;
+      }
+
+      // فحص عدد المحاولات
+      const attempts = this.connectionAttempts.get(fromUserId) || 0;
+      if (attempts >= 3) {
+        console.log('🛑 Too many connection attempts with:', fromUserId);
+        return;
+      }
+
+      this.processingOffers.add(fromUserId);
+      this.connectionAttempts.set(fromUserId, attempts + 1);
+
       console.log('📥 Received offer from:', fromUserId);
 
-      // التحقق من وجود اتصال موجود
+      // التحقق من وجود اتصال موجود ومستقر
       const existingPc = this.peerConnections.get(fromUserId);
+      if (existingPc && existingPc.connectionState === 'connected') {
+        console.log('✅ Connection already established with:', fromUserId);
+        this.processingOffers.delete(fromUserId);
+        return;
+      }
+
       if (existingPc && existingPc.signalingState !== 'closed') {
         console.log('🔄 Closing existing connection before creating new one');
         existingPc.close();
@@ -257,15 +288,23 @@ export class WebRTCVoiceService {
             fromUserId: this.userId
           }
         });
+
+        // إزالة من قائمة المعالجة بعد النجاح
+        setTimeout(() => {
+          this.processingOffers.delete(fromUserId);
+        }, 2000);
+
       } catch (sdpError) {
         console.error('❌ SDP error in offer handling:', sdpError);
         // تنظيف الاتصال المعطل
         pc.close();
         this.peerConnections.delete(fromUserId);
+        this.processingOffers.delete(fromUserId);
       }
 
     } catch (error) {
       console.error('❌ Error handling offer:', error);
+      this.processingOffers.delete(data.fromUserId);
     }
   }
 
@@ -333,13 +372,33 @@ export class WebRTCVoiceService {
       const { userId } = data;
       if (userId === this.userId) return; // Skip self
 
+      // فحص وجود اتصال مستقر بالفعل
+      const existingPc = this.peerConnections.get(userId);
+      if (existingPc && existingPc.connectionState === 'connected') {
+        console.log('✅ Already connected to:', userId);
+        return;
+      }
+
+      // منع المعالجة المتكررة
+      if (this.processingOffers.has(userId)) {
+        console.log('⏭️ Already processing connection with:', userId);
+        return;
+      }
+
       console.log('👤 User joined voice room:', userId);
 
       // تجنب التضارب: فقط المستخدم ذو الـ ID الأصغر يرسل offer
-      // هذا يمنع إرسال offers متبادلة في نفس الوقت
       const shouldSendOffer = this.userId! < userId;
 
       if (shouldSendOffer) {
+        // فحص عدد المحاولات
+        const attempts = this.connectionAttempts.get(userId) || 0;
+        if (attempts >= 3) {
+          console.log('🛑 Too many offer attempts to:', userId);
+          return;
+        }
+
+        this.connectionAttempts.set(userId, attempts + 1);
         console.log('🔄 Creating peer connection and offer for:', userId);
 
         // Create offer for new user
@@ -371,14 +430,18 @@ export class WebRTCVoiceService {
   private handleUserLeft(data: any) {
     const { userId } = data;
     console.log('👋 User left voice room:', userId);
-    
+
     // Close peer connection
     const pc = this.peerConnections.get(userId);
     if (pc) {
       pc.close();
       this.peerConnections.delete(userId);
     }
-    
+
+    // تنظيف متغيرات منع التكرار
+    this.processingOffers.delete(userId);
+    this.connectionAttempts.delete(userId);
+
     // Remove user
     this.remoteUsers.delete(userId);
     this.onUserLeft?.(userId);
