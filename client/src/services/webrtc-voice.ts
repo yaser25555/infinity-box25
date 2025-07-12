@@ -24,6 +24,7 @@ export class WebRTCVoiceService {
   // منع التكرار
   private processingOffers: Set<string> = new Set();
   private connectionAttempts: Map<string, number> = new Map();
+  private connectionMonitorInterval: NodeJS.Timeout | null = null;
   
   // Voice Activity Detection
   private audioContext: AudioContext | null = null;
@@ -94,6 +95,9 @@ export class WebRTCVoiceService {
       });
 
       this.isJoined = true;
+
+      // بدء فحص دوري للاتصالات
+      this.startConnectionMonitoring();
       
     } catch (error) {
       console.error('❌ Error joining voice room:', error);
@@ -134,6 +138,9 @@ export class WebRTCVoiceService {
       // تنظيف متغيرات منع التكرار
       this.processingOffers.clear();
       this.connectionAttempts.clear();
+
+      // إيقاف مراقبة الاتصالات
+      this.stopConnectionMonitoring();
       
     } catch (error) {
       console.error('❌ Error leaving voice room:', error);
@@ -194,13 +201,24 @@ export class WebRTCVoiceService {
     // Handle remote stream
     pc.ontrack = (event) => {
       const [remoteStream] = event.streams;
+      console.log('🎵 Received remote stream from:', userId);
 
       // Play remote audio with echo prevention
       const audio = new Audio();
       audio.srcObject = remoteStream;
       audio.volume = 0.8;
       audio.autoplay = true;
-      audio.play().catch(() => {});
+
+      // تأكد من تشغيل الصوت
+      audio.play().then(() => {
+        console.log('✅ Remote audio playing from:', userId);
+      }).catch((error) => {
+        console.warn('⚠️ Audio play failed, trying user interaction:', error);
+        // محاولة تشغيل الصوت عند التفاعل التالي
+        document.addEventListener('click', () => {
+          audio.play().catch(() => {});
+        }, { once: true });
+      });
 
       // Update user
       const user = this.remoteUsers.get(userId) || {
@@ -226,7 +244,31 @@ export class WebRTCVoiceService {
         });
       }
     };
-    
+
+    // معالج حالة الاتصال
+    pc.onconnectionstatechange = () => {
+      console.log(`🔗 Connection state with ${userId}: ${pc.connectionState}`);
+      if (pc.connectionState === 'connected') {
+        console.log(`✅ Successfully connected to ${userId}`);
+        // إزالة من قائمة المعالجة عند نجاح الاتصال
+        this.processingOffers.delete(userId);
+        this.connectionAttempts.delete(userId);
+      } else if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+        console.log(`❌ Connection failed/disconnected with ${userId}`);
+        // تنظيف الاتصال المعطل
+        this.peerConnections.delete(userId);
+        this.processingOffers.delete(userId);
+      }
+    };
+
+    // معالج حالة ICE
+    pc.oniceconnectionstatechange = () => {
+      console.log(`🧊 ICE state with ${userId}: ${pc.iceConnectionState}`);
+      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        console.log(`🎉 ICE connection established with ${userId}`);
+      }
+    };
+
     this.peerConnections.set(userId, pc);
     return pc;
   }
@@ -326,18 +368,34 @@ export class WebRTCVoiceService {
           await pc.setRemoteDescription(answer);
           console.log('✅ Set remote description (answer) for:', fromUserId);
           console.log('🔗 WebRTC connection should be established with:', fromUserId);
+
+          // انتظار قصير للتأكد من استقرار الاتصال
+          setTimeout(() => {
+            if (pc.connectionState === 'connected') {
+              console.log('🎉 Connection confirmed with:', fromUserId);
+            } else {
+              console.log('⏳ Waiting for connection to stabilize with:', fromUserId);
+            }
+          }, 1000);
+
         } catch (sdpError) {
           console.warn('⚠️ SDP error, recreating connection:', sdpError.message);
           // إعادة إنشاء الاتصال في حالة خطأ SDP
           this.peerConnections.delete(fromUserId);
+          this.processingOffers.delete(fromUserId);
+
+          // محاولة إعادة الاتصال بعد تأخير
           setTimeout(() => {
-            this.handleUserJoined({ userId: fromUserId });
-          }, 1000);
+            if (this.userId! < fromUserId) {
+              this.handleUserJoined({ userId: fromUserId });
+            }
+          }, 2000);
         }
       } else if (pc.signalingState === 'stable') {
         console.log('ℹ️ Connection already stable with:', fromUserId);
       } else {
         console.warn('⚠️ Peer connection not in correct state for answer:', pc.signalingState);
+        console.log('🔄 Current state:', pc.signalingState, 'Connection state:', pc.connectionState);
       }
 
     } catch (error) {
@@ -561,8 +619,44 @@ export class WebRTCVoiceService {
     }
   }
 
+  // فحص حالة الاتصالات وإعادة المحاولة إذا لزم الأمر
+  private checkConnectionsAndRetry() {
+    this.peerConnections.forEach((pc, userId) => {
+      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+        console.log('🔄 Retrying connection with:', userId);
+        this.peerConnections.delete(userId);
+        this.processingOffers.delete(userId);
+
+        // إعادة المحاولة بعد تأخير قصير
+        setTimeout(() => {
+          if (this.userId! < userId) {
+            this.handleUserJoined({ userId });
+          }
+        }, 1000);
+      }
+    });
+  }
+
+  // بدء مراقبة الاتصالات
+  private startConnectionMonitoring() {
+    if (this.connectionMonitorInterval) return;
+
+    this.connectionMonitorInterval = setInterval(() => {
+      this.checkConnectionsAndRetry();
+    }, 5000); // فحص كل 5 ثوان
+  }
+
+  // إيقاف مراقبة الاتصالات
+  private stopConnectionMonitoring() {
+    if (this.connectionMonitorInterval) {
+      clearInterval(this.connectionMonitorInterval);
+      this.connectionMonitorInterval = null;
+    }
+  }
+
   // Cleanup method for React component unmount
   cleanup() {
+    this.stopConnectionMonitoring();
     this.leaveRoom().catch(console.error);
   }
 }
