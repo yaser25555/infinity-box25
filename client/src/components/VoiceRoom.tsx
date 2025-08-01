@@ -743,92 +743,55 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
           </div>
         )}
 
-        {/* أزرار التحكم في الأسفل - تصميم دائري حديث */}
+        {/* أزرار التحكم في الأسفل - تصميم دائري بسيط بلا مؤثرات */}
         <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-30">
           <div className="flex items-center gap-4">
             {/* زر كتم/إلغاء كتم المايك */}
             {isInSeat && (
               <button
                 onClick={toggleMute}
-                className={`group relative w-16 h-16 rounded-full flex items-center justify-center transition-all duration-500 shadow-2xl transform hover:scale-110 hover:rotate-12 ${
-                  isMuted
-                    ? 'bg-gradient-to-br from-red-500 to-red-600 shadow-red-500/50 hover:shadow-red-500/70'
-                    : 'bg-gradient-to-br from-green-500 to-emerald-500 shadow-green-500/50 hover:shadow-green-500/70'
+                className={`w-16 h-16 rounded-full flex items-center justify-center text-white text-lg font-bold focus:outline-none transition-colors duration-200 ${
+                  isMuted ? 'bg-red-500' : 'bg-green-500'
                 }`}
                 title={isMuted ? 'إلغاء كتم المايك' : 'كتم المايك'}
               >
-                {/* تأثير التوهج */}
-                <div className={`absolute inset-0 rounded-full blur-lg opacity-50 group-hover:opacity-70 transition-opacity ${
-                  isMuted ? 'bg-red-500' : 'bg-green-500'
-                }`}></div>
-                
                 {isMuted ? (
-                  <MicOff className="w-7 h-7 text-white relative z-10 group-hover:scale-110 transition-transform" />
+                  <MicOff className="w-7 h-7" />
                 ) : (
-                  <Mic className="w-7 h-7 text-white relative z-10 group-hover:scale-110 transition-transform" />
+                  <Mic className="w-7 h-7" />
                 )}
-                
-                {/* تأثير النبض */}
-                <div className={`absolute inset-0 rounded-full border-2 border-white/30 animate-ping ${
-                  isMuted ? 'border-red-400' : 'border-green-400'
-                }`}></div>
               </button>
             )}
-
             {/* زر المغادرة */}
             {isInSeat && (
               <button
                 onClick={leaveSeat}
-                className="group relative w-16 h-16 bg-gradient-to-br from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 rounded-full flex items-center justify-center transition-all duration-500 shadow-2xl shadow-red-500/50 hover:shadow-red-500/70 transform hover:scale-110 hover:rotate-12"
+                className="w-16 h-16 rounded-full flex items-center justify-center bg-red-500 text-white text-lg font-bold focus:outline-none transition-colors duration-200"
                 title="مغادرة المقعد"
                 disabled={isConnecting}
               >
-                {/* تأثير التوهج */}
-                <div className="absolute inset-0 rounded-full blur-lg bg-red-500 opacity-50 group-hover:opacity-70 transition-opacity"></div>
-                
-                <X className="w-7 h-7 text-white relative z-10 group-hover:scale-110 transition-transform" />
-                
-                {/* تأثير النبض */}
-                <div className="absolute inset-0 rounded-full border-2 border-red-400/30 animate-ping"></div>
+                <X className="w-7 h-7" />
               </button>
             )}
-
             {/* زر المحادثة النصية */}
             <button
               onClick={() => setShowChat(!showChat)}
-              className={`group relative w-16 h-16 rounded-full flex items-center justify-center transition-all duration-500 shadow-2xl transform hover:scale-110 hover:rotate-12 ${
-                showChat
-                  ? 'bg-gradient-to-br from-purple-600 to-purple-700 shadow-purple-500/50 hover:shadow-purple-500/70'
-                  : 'bg-gradient-to-br from-purple-500 to-purple-600 shadow-purple-500/50 hover:shadow-purple-500/70'
+              className={`w-16 h-16 rounded-full flex items-center justify-center text-white text-lg font-bold focus:outline-none transition-colors duration-200 ${
+                showChat ? 'bg-purple-600' : 'bg-purple-500'
               }`}
               title="المحادثة النصية"
             >
-              {/* تأثير التوهج */}
-              <div className="absolute inset-0 rounded-full blur-lg bg-purple-500 opacity-50 group-hover:opacity-70 transition-opacity"></div>
-              
-              <MessageCircle className="w-7 h-7 text-white relative z-10 group-hover:scale-110 transition-transform" />
-              
-              {/* تأثير النبض */}
-              <div className="absolute inset-0 rounded-full border-2 border-purple-400/30 animate-ping"></div>
+              <MessageCircle className="w-7 h-7" />
             </button>
-
             {/* زر الألعاب المختصر */}
             <button
               onClick={() => setShowGames(!showGames)}
-              className={`group relative w-16 h-16 rounded-full flex items-center justify-center transition-all duration-500 shadow-2xl transform hover:scale-110 hover:rotate-12 ${
-                showGames
-                  ? 'bg-gradient-to-br from-indigo-600 to-indigo-700 shadow-indigo-500/50 hover:shadow-indigo-500/70'
-                  : 'bg-gradient-to-br from-indigo-500 to-indigo-600 shadow-indigo-500/50 hover:shadow-indigo-500/70'
+              className={`w-16 h-16 rounded-full flex items-center justify-center text-white text-lg font-bold focus:outline-none transition-colors duration-200 ${
+                showGames ? 'bg-indigo-600' : 'bg-indigo-500'
               }`}
               title="الألعاب"
             >
-              {/* تأثير التوهج */}
-              <div className="absolute inset-0 rounded-full blur-lg bg-indigo-500 opacity-50 group-hover:opacity-70 transition-opacity"></div>
-              
-              <Gamepad2 className="w-7 h-7 text-white relative z-10 group-hover:scale-110 transition-transform" />
-              
-              {/* تأثير النبض */}
-              <div className="absolute inset-0 rounded-full border-2 border-indigo-400/30 animate-ping"></div>
+              <Gamepad2 className="w-7 h-7" />
             </button>
           </div>
         </div>
