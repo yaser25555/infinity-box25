@@ -629,52 +629,50 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
       {/* تأثيرات الخلفية */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute top-20 left-20 w-72 h-72 bg-purple-500/10 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-20 right-20 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }}></div>
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-purple-600/5 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '4s' }}></div>
+        <div className="absolute bottom-20 right-20 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-pink-500/5 rounded-full blur-3xl animate-pulse delay-2000"></div>
       </div>
 
       {/* المحتوى الرئيسي */}
       <div className="relative z-10 h-full flex flex-col">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-purple-800/60 to-indigo-800/60 backdrop-blur-md border-b border-purple-500/30 p-4 shadow-lg">
+        {/* الهيدر */}
+        <div className="bg-gradient-to-r from-purple-800/60 to-indigo-800/60 backdrop-blur-md border-b border-purple-500/30 p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full flex items-center justify-center shadow-lg shadow-purple-500/50">
-                <Volume2 className="w-7 h-7 text-white" />
+              <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full flex items-center justify-center">
+                <Volume2 className="w-5 h-5 text-white" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-white tracking-wide">INFINITY ROOM</h1>
-                <p className="text-purple-200 text-sm">غرفة صوتية للمحادثة مع الأصدقاء</p>
+                <h1 className="text-lg font-bold text-white">الغرفة الصوتية</h1>
+                <p className="text-purple-200 text-sm">تواصل مع الأصدقاء</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2 bg-black/30 backdrop-blur-sm px-4 py-2 rounded-full border border-purple-500/20">
-                <Users className="w-4 h-4 text-purple-300" />
-                <span className="text-purple-200 text-sm font-medium">
-                  {roomData.seats.filter(seat => seat.user).length}/{roomData.maxSeats}
+            <div className="flex items-center gap-3">
+              {/* حالة الاتصال */}
+              <div className="flex items-center gap-2 bg-black/30 backdrop-blur-sm px-3 py-2 rounded-full border border-purple-500/20">
+                <div className={`w-2 h-2 rounded-full ${isConnecting ? 'bg-yellow-400 animate-pulse' : 'bg-green-400'}`}></div>
+                <span className="text-white text-sm font-medium">
+                  {isConnecting ? 'جاري الاتصال...' : 'متصل'}
                 </span>
               </div>
 
-              <div className="flex items-center gap-2 bg-black/30 backdrop-blur-sm px-4 py-2 rounded-full border border-purple-500/20">
-                {isVoiceConnected ? (
-                  <Wifi className="w-4 h-4 text-green-400" />
-                ) : (
-                  <WifiOff className="w-4 h-4 text-red-400" />
-                )}
-                <span className="text-purple-200 text-sm font-medium">
-                  {isVoiceConnected ? 'متصل' : 'غير متصل'}
+              {/* عدد المستخدمين */}
+              <div className="flex items-center gap-2 bg-black/30 backdrop-blur-sm px-3 py-2 rounded-full border border-purple-500/20">
+                <Users className="w-4 h-4 text-purple-300" />
+                <span className="text-white text-sm font-medium">
+                  {roomData?.seats.filter(seat => seat.user).length || 0}/{roomData?.maxSeats || 8}
                 </span>
               </div>
             </div>
           </div>
         </div>
 
-        {/* المقاعد الصوتية */}
-        <div className="flex-1 p-6 overflow-y-auto">
+        {/* منطقة المقاعد */}
+        <div className="flex-1 p-6">
           <VoiceSeats
-            seats={roomData.seats}
-            waitingQueue={roomData.waitingQueue}
+            seats={roomData?.seats || []}
+            waitingQueue={roomData?.waitingQueue || []}
             currentUser={user}
             isInSeat={isInSeat}
             currentSeatNumber={currentSeatNumber}
@@ -686,80 +684,61 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
           />
         </div>
 
-        {/* نافذة المحادثة النصية - تنزل من الأعلى */}
+        {/* نافذة المحادثة النصية */}
         {showChat && (
-          <div className="absolute top-0 left-0 right-0 z-20 bg-gradient-to-b from-purple-900/95 to-indigo-900/95 backdrop-blur-md border-b border-purple-500/40 shadow-2xl">
-            <div className="p-4">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <MessageCircle className="w-5 h-5 text-purple-300" />
-                  المحادثة النصية
-                </h3>
-                <button
-                  onClick={() => setShowChat(false)}
-                  className="w-8 h-8 bg-purple-600 hover:bg-purple-700 rounded-full flex items-center justify-center transition-all duration-300 shadow-lg shadow-purple-600/50"
-                >
-                  <X className="w-4 h-4 text-white" />
-                </button>
-              </div>
-              <VoiceChatBox
-                messages={messages}
-                currentUser={user}
-                isInWaitingQueue={isInWaitingQueue}
-                onSendMessage={sendMessage}
-                onRequestMic={requestMic}
-              />
-            </div>
+          <div className="absolute top-20 left-4 right-4 z-40 animate-slide-down">
+            <VoiceChatBox
+              messages={messages}
+              currentUser={user}
+              isInWaitingQueue={isInWaitingQueue}
+              onSendMessage={sendMessage}
+              onRequestMic={requestMic}
+            />
           </div>
         )}
 
-        {/* شريط الألعاب - في الأسفل */}
+        {/* قائمة الألعاب المختصرة */}
         {showGames && (
-          <div className="absolute bottom-20 left-0 right-0 z-20 bg-gradient-to-t from-purple-900/95 to-indigo-900/95 backdrop-blur-md border-t border-purple-500/40 shadow-2xl">
-            <div className="p-4">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <Gamepad2 className="w-5 h-5 text-purple-300" />
-                  الألعاب
-                </h3>
-                <button
-                  onClick={() => setShowGames(false)}
-                  className="w-8 h-8 bg-purple-600 hover:bg-purple-700 rounded-full flex items-center justify-center transition-all duration-300 shadow-lg shadow-purple-600/50"
+          <div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 z-30 animate-slide-up">
+            <div className="bg-gradient-to-br from-purple-900/90 to-indigo-900/90 backdrop-blur-xl rounded-2xl p-4 border border-purple-500/30 shadow-2xl">
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={() => window.open('/game8.html', '_blank')}
+                  className="group relative p-3 bg-gradient-to-br from-green-500/20 to-emerald-500/20 hover:from-green-500/40 hover:to-emerald-500/40 rounded-xl border border-green-500/30 hover:border-green-400/50 transition-all duration-300 transform hover:scale-105"
+                  title="صناديق الحظ"
                 >
-                  <X className="w-4 h-4 text-white" />
-                </button>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <button className="p-4 bg-purple-600/50 hover:bg-purple-600/70 rounded-lg transition-all duration-300 transform hover:scale-105 shadow-lg shadow-purple-600/25">
-                  <div className="text-center">
-                    <div className="w-12 h-12 bg-purple-500 rounded-lg mx-auto mb-2 flex items-center justify-center shadow-inner">
-                      <span className="text-white font-bold text-xl">🎮</span>
-                    </div>
-                    <span className="text-white text-sm font-medium">لعبة 1</span>
+                  <div className="w-8 h-8 bg-gradient-to-r from-green-500 to-emerald-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <span className="text-white font-bold text-sm">🎯</span>
                   </div>
                 </button>
-                <button className="p-4 bg-purple-600/50 hover:bg-purple-600/70 rounded-lg transition-all duration-300 transform hover:scale-105 shadow-lg shadow-purple-600/25">
-                  <div className="text-center">
-                    <div className="w-12 h-12 bg-purple-500 rounded-lg mx-auto mb-2 flex items-center justify-center shadow-inner">
-                      <span className="text-white font-bold text-xl">🎯</span>
-                    </div>
-                    <span className="text-white text-sm font-medium">لعبة 2</span>
+                
+                <button 
+                  onClick={() => window.open('/speed-challenge.html', '_blank')}
+                  className="group relative p-3 bg-gradient-to-br from-yellow-500/20 to-orange-500/20 hover:from-yellow-500/40 hover:to-orange-500/40 rounded-xl border border-yellow-500/30 hover:border-yellow-400/50 transition-all duration-300 transform hover:scale-105"
+                  title="تحدي السرعة"
+                >
+                  <div className="w-8 h-8 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <span className="text-white font-bold text-sm">⚡</span>
                   </div>
                 </button>
-                <button className="p-4 bg-purple-600/50 hover:bg-purple-600/70 rounded-lg transition-all duration-300 transform hover:scale-105 shadow-lg shadow-purple-600/25">
-                  <div className="text-center">
-                    <div className="w-12 h-12 bg-purple-500 rounded-lg mx-auto mb-2 flex items-center justify-center shadow-inner">
-                      <span className="text-white font-bold text-xl">🧩</span>
-                    </div>
-                    <span className="text-white text-sm font-medium">لعبة 3</span>
+                
+                <button 
+                  onClick={() => window.open('/mind-puzzles.html', '_blank')}
+                  className="group relative p-3 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 hover:from-blue-500/40 hover:to-cyan-500/40 rounded-xl border border-blue-500/30 hover:border-blue-400/50 transition-all duration-300 transform hover:scale-105"
+                  title="ألغاز العقل"
+                >
+                  <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <span className="text-white font-bold text-sm">🧩</span>
                   </div>
                 </button>
-                <button className="p-4 bg-purple-600/50 hover:bg-purple-600/70 rounded-lg transition-all duration-300 transform hover:scale-105 shadow-lg shadow-purple-600/25">
-                  <div className="text-center">
-                    <div className="w-12 h-12 bg-purple-500 rounded-lg mx-auto mb-2 flex items-center justify-center shadow-inner">
-                      <span className="text-white font-bold text-xl">🎲</span>
-                    </div>
-                    <span className="text-white text-sm font-medium">لعبة 4</span>
+                
+                <button 
+                  onClick={() => window.open('/memory-match.html', '_blank')}
+                  className="group relative p-3 bg-gradient-to-br from-purple-500/20 to-pink-500/20 hover:from-purple-500/40 hover:to-pink-500/40 rounded-xl border border-purple-500/30 hover:border-purple-400/50 transition-all duration-300 transform hover:scale-105"
+                  title="لعبة الذاكرة"
+                >
+                  <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <span className="text-white font-bold text-sm">🧠</span>
                   </div>
                 </button>
               </div>
@@ -767,25 +746,35 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
           </div>
         )}
 
-        {/* أزرار التحكم في الأسفل - مدورة وصغيرة */}
+        {/* أزرار التحكم في الأسفل - تصميم دائري حديث */}
         <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-30">
           <div className="flex items-center gap-4">
             {/* زر كتم/إلغاء كتم المايك */}
             {isInSeat && (
               <button
                 onClick={toggleMute}
-                className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-300 shadow-xl transform hover:scale-110 ${
+                className={`group relative w-16 h-16 rounded-full flex items-center justify-center transition-all duration-500 shadow-2xl transform hover:scale-110 hover:rotate-12 ${
                   isMuted
-                    ? 'bg-red-500 hover:bg-red-600 shadow-red-500/50'
-                    : 'bg-green-500 hover:bg-green-600 shadow-green-500/50'
+                    ? 'bg-gradient-to-br from-red-500 to-red-600 shadow-red-500/50 hover:shadow-red-500/70'
+                    : 'bg-gradient-to-br from-green-500 to-emerald-500 shadow-green-500/50 hover:shadow-green-500/70'
                 }`}
                 title={isMuted ? 'إلغاء كتم المايك' : 'كتم المايك'}
               >
+                {/* تأثير التوهج */}
+                <div className={`absolute inset-0 rounded-full blur-lg opacity-50 group-hover:opacity-70 transition-opacity ${
+                  isMuted ? 'bg-red-500' : 'bg-green-500'
+                }`}></div>
+                
                 {isMuted ? (
-                  <MicOff className="w-6 h-6 text-white" />
+                  <MicOff className="w-7 h-7 text-white relative z-10 group-hover:scale-110 transition-transform" />
                 ) : (
-                  <Mic className="w-6 h-6 text-white" />
+                  <Mic className="w-7 h-7 text-white relative z-10 group-hover:scale-110 transition-transform" />
                 )}
+                
+                {/* تأثير النبض */}
+                <div className={`absolute inset-0 rounded-full border-2 border-white/30 animate-ping ${
+                  isMuted ? 'border-red-400' : 'border-green-400'
+                }`}></div>
               </button>
             )}
 
@@ -793,38 +782,56 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
             {isInSeat && (
               <button
                 onClick={leaveSeat}
-                className="w-14 h-14 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center transition-all duration-300 shadow-xl shadow-red-500/50 transform hover:scale-110"
+                className="group relative w-16 h-16 bg-gradient-to-br from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 rounded-full flex items-center justify-center transition-all duration-500 shadow-2xl shadow-red-500/50 hover:shadow-red-500/70 transform hover:scale-110 hover:rotate-12"
                 title="مغادرة المقعد"
                 disabled={isConnecting}
               >
-                <X className="w-6 h-6 text-white" />
+                {/* تأثير التوهج */}
+                <div className="absolute inset-0 rounded-full blur-lg bg-red-500 opacity-50 group-hover:opacity-70 transition-opacity"></div>
+                
+                <X className="w-7 h-7 text-white relative z-10 group-hover:scale-110 transition-transform" />
+                
+                {/* تأثير النبض */}
+                <div className="absolute inset-0 rounded-full border-2 border-red-400/30 animate-ping"></div>
               </button>
             )}
 
             {/* زر المحادثة النصية */}
             <button
               onClick={() => setShowChat(!showChat)}
-              className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-300 shadow-xl transform hover:scale-110 ${
+              className={`group relative w-16 h-16 rounded-full flex items-center justify-center transition-all duration-500 shadow-2xl transform hover:scale-110 hover:rotate-12 ${
                 showChat
-                  ? 'bg-purple-600 shadow-purple-500/50'
-                  : 'bg-purple-500 hover:bg-purple-600 shadow-purple-500/50'
+                  ? 'bg-gradient-to-br from-purple-600 to-purple-700 shadow-purple-500/50 hover:shadow-purple-500/70'
+                  : 'bg-gradient-to-br from-purple-500 to-purple-600 shadow-purple-500/50 hover:shadow-purple-500/70'
               }`}
               title="المحادثة النصية"
             >
-              <MessageCircle className="w-6 h-6 text-white" />
+              {/* تأثير التوهج */}
+              <div className="absolute inset-0 rounded-full blur-lg bg-purple-500 opacity-50 group-hover:opacity-70 transition-opacity"></div>
+              
+              <MessageCircle className="w-7 h-7 text-white relative z-10 group-hover:scale-110 transition-transform" />
+              
+              {/* تأثير النبض */}
+              <div className="absolute inset-0 rounded-full border-2 border-purple-400/30 animate-ping"></div>
             </button>
 
-            {/* زر الألعاب */}
+            {/* زر الألعاب المختصر */}
             <button
               onClick={() => setShowGames(!showGames)}
-              className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-300 shadow-xl transform hover:scale-110 ${
+              className={`group relative w-16 h-16 rounded-full flex items-center justify-center transition-all duration-500 shadow-2xl transform hover:scale-110 hover:rotate-12 ${
                 showGames
-                  ? 'bg-indigo-600 shadow-indigo-500/50'
-                  : 'bg-indigo-500 hover:bg-indigo-600 shadow-indigo-500/50'
+                  ? 'bg-gradient-to-br from-indigo-600 to-indigo-700 shadow-indigo-500/50 hover:shadow-indigo-500/70'
+                  : 'bg-gradient-to-br from-indigo-500 to-indigo-600 shadow-indigo-500/50 hover:shadow-indigo-500/70'
               }`}
               title="الألعاب"
             >
-              <Gamepad2 className="w-6 h-6 text-white" />
+              {/* تأثير التوهج */}
+              <div className="absolute inset-0 rounded-full blur-lg bg-indigo-500 opacity-50 group-hover:opacity-70 transition-opacity"></div>
+              
+              <Gamepad2 className="w-7 h-7 text-white relative z-10 group-hover:scale-110 transition-transform" />
+              
+              {/* تأثير النبض */}
+              <div className="absolute inset-0 rounded-full border-2 border-indigo-400/30 animate-ping"></div>
             </button>
           </div>
         </div>
