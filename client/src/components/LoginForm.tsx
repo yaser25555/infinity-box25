@@ -104,11 +104,11 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess, onSwitchToRegiste
             <div className="text-center mb-6">
               {/* الشعار المدور كالقمر داخل الحاوية الزرقاء */}
               <div className="relative mx-auto mb-6">
-                {/* كرة الشعار بتدرج ألوان ودوران خفيف */}
-                <div className="w-28 h-28 rounded-full flex items-center justify-center mx-auto overflow-hidden animate-spin-slow" style={{background: 'conic-gradient(from 0deg, #ff9800, #ff5722, #ffeb3b, #2196f3, #ff9800)'}}>
+                {/* كرة الشعار بتدرج ألوان ودوران بطيء جداً */}
+                <div className="w-28 h-28 rounded-full flex items-center justify-center mx-auto overflow-hidden animate-spin-very-slow" style={{background: 'conic-gradient(from 0deg, #ff9800, #ff5722, #ffeb3b, #2196f3, #ff9800)'}}>
                   <div className="text-center z-10 select-none">
-                    <div className="text-white font-black text-lg leading-tight mb-1 drop-shadow-lg">
-                      INFINITY
+                    <div className="text-white font-black text-lg leading-tight mb-1 drop-shadow-lg flex items-center justify-center gap-1">
+                      INFINITY <span className="text-yellow-300 text-base font-extrabold ml-1">25</span>
                     </div>
                     <div className="text-white font-black text-lg leading-tight drop-shadow-lg">
                       BOX
