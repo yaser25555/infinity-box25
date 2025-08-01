@@ -762,6 +762,26 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
                 )}
               </button>
             )}
+            {/* زر الألعاب المختصر (مكان زر الانتظار) */}
+            <button
+              onClick={() => setShowGames(!showGames)}
+              className={`w-16 h-16 rounded-full flex items-center justify-center text-white text-lg font-bold focus:outline-none transition-colors duration-200 ${
+                showGames ? 'bg-indigo-600' : 'bg-indigo-500'
+              }`}
+              title="الألعاب"
+            >
+              <Gamepad2 className="w-7 h-7" />
+            </button>
+            {/* زر المحادثة النصية */}
+            <button
+              onClick={() => setShowChat(!showChat)}
+              className={`w-16 h-16 rounded-full flex items-center justify-center text-white text-lg font-bold focus:outline-none transition-colors duration-200 ${
+                showChat ? 'bg-purple-600' : 'bg-purple-500'
+              }`}
+              title="المحادثة النصية"
+            >
+              <MessageCircle className="w-7 h-7" />
+            </button>
             {/* زر المغادرة */}
             {isInSeat && (
               <button
@@ -773,26 +793,6 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
                 <X className="w-7 h-7" />
               </button>
             )}
-            {/* زر المحادثة النصية */}
-            <button
-              onClick={() => setShowChat(!showChat)}
-              className={`w-16 h-16 rounded-full flex items-center justify-center text-white text-lg font-bold focus:outline-none transition-colors duration-200 ${
-                showChat ? 'bg-purple-600' : 'bg-purple-500'
-              }`}
-              title="المحادثة النصية"
-            >
-              <MessageCircle className="w-7 h-7" />
-            </button>
-            {/* زر الألعاب المختصر */}
-            <button
-              onClick={() => setShowGames(!showGames)}
-              className={`w-16 h-16 rounded-full flex items-center justify-center text-white text-lg font-bold focus:outline-none transition-colors duration-200 ${
-                showGames ? 'bg-indigo-600' : 'bg-indigo-500'
-              }`}
-              title="الألعاب"
-            >
-              <Gamepad2 className="w-7 h-7" />
-            </button>
           </div>
         </div>
       </div>
