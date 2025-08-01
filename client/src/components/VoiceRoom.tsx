@@ -711,7 +711,6 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
                     <span className="text-white font-bold text-sm">🎯</span>
                   </div>
                 </button>
-                
                 <button 
                   onClick={() => window.open('/speed-challenge.html', '_blank')}
                   className="group relative p-3 bg-gradient-to-br from-yellow-500/20 to-orange-500/20 hover:from-yellow-500/40 hover:to-orange-500/40 rounded-xl border border-yellow-500/30 hover:border-yellow-400/50 transition-all duration-300 transform hover:scale-105"
@@ -721,7 +720,6 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
                     <span className="text-white font-bold text-sm">⚡</span>
                   </div>
                 </button>
-                
                 <button 
                   onClick={() => window.open('/mind-puzzles.html', '_blank')}
                   className="group relative p-3 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 hover:from-blue-500/40 hover:to-cyan-500/40 rounded-xl border border-blue-500/30 hover:border-blue-400/50 transition-all duration-300 transform hover:scale-105"
@@ -731,7 +729,6 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
                     <span className="text-white font-bold text-sm">🧩</span>
                   </div>
                 </button>
-                
                 <button 
                   onClick={() => window.open('/memory-match.html', '_blank')}
                   className="group relative p-3 bg-gradient-to-br from-purple-500/20 to-pink-500/20 hover:from-purple-500/40 hover:to-pink-500/40 rounded-xl border border-purple-500/30 hover:border-purple-400/50 transition-all duration-300 transform hover:scale-105"
