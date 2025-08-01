@@ -210,7 +210,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
       <div className="relative z-10 min-h-screen flex flex-col">
         {/* المحتوى الرئيسي - تسجيل الدخول مع الشعار المتحرك */}
         <div className="flex-1 flex items-center justify-center px-4 py-8">
-          <div className="w-full max-w-md mx-auto">
+          <div className="w-full max-w-sm mx-auto">
             {showSuccess ? (
               <div className="w-full max-w-md mx-auto">
                 <div className="bg-green-500/20 border border-green-500/50 rounded-3xl p-8 text-center">
