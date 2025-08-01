@@ -132,6 +132,8 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService, onBa
   const [selectedTextColor, setSelectedTextColor] = useState('#ffffff');
   const [textSuggestions, setTextSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const [showGames, setShowGames] = useState(false);
 
   // ألوان المحادثة المتاحة
   const chatColors = [
@@ -978,114 +980,51 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService, onBa
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 text-white overflow-hidden">
-      {/* Header - مضغوط ومحسن */}
-      <div className="bg-black/30 backdrop-blur-sm border-b border-white/10 p-2 flex-shrink-0">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleBack}
-              className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </button>
-            <div>
-              <h1 className="text-sm font-bold flex items-center gap-1">
-                <Volume2 className="w-3 h-3 text-purple-400" />
-                INFINITY ROOM
-              </h1>
-              <p className="text-xs text-gray-300">غرفة صوتية للمحادثة</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-1 text-xs">
-            {/* مؤشر التحديث في الخلفية */}
-            {isRefreshing && (
-              <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse mr-1"></div>
-            )}
-            <Users className="w-3 h-3 text-gray-400" />
-            <span className="text-gray-300">
-              {(roomData.seats?.filter(seat => seat.user).length || 0)}/5
-            </span>
-            {(user.role === 'admin' || user.isAdmin) && (
-              <span className="bg-red-600 text-white px-1.5 py-0.5 rounded text-xs ml-1">ADMIN</span>
-            )}
-          </div>
+    <div className="relative min-h-screen bg-gradient-to-br from-purple-900 via-purple-800 to-indigo-900 overflow-hidden flex flex-col">
+      {/* شعار انفنتي في المنتصف مع تأثيرات */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
+        <div className="text-center opacity-10">
+          <div className="text-8xl font-bold text-white mb-2 animate-pulse">∞</div>
+          <div className="text-2xl font-bold text-purple-200 tracking-wider">INFINITY</div>
         </div>
-
-        {/* Control Buttons - مضغوطة ومحسنة */}
-        {isInSeat && (
-          <div className="bg-black/20 backdrop-blur-sm rounded-lg p-2 mt-2">
-            <div className="flex items-center gap-1 mb-2">
-              <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
-              <span className="text-xs text-green-400 font-medium">مقعد {currentSeatNumber}</span>
-            </div>
-
-            <div className="flex items-center gap-1">
-              <button
-                onClick={toggleMute}
-                className={`flex-1 py-1.5 px-2 rounded-md transition-colors flex items-center justify-center gap-1 text-xs font-medium ${
-                  isMuted
-                    ? 'bg-red-600 hover:bg-red-700 text-white'
-                    : 'bg-green-600 hover:bg-green-700 text-white'
-                }`}
-              >
-                {isMuted ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}
-                <span>{isMuted ? 'إلغاء كتم' : 'كتم'}</span>
-              </button>
-
-              <button
-                onClick={toggleSound}
-                className={`flex-1 py-1.5 px-2 rounded-md transition-colors flex items-center justify-center gap-1 text-xs font-medium ${
-                  isSoundMuted
-                    ? 'bg-red-600 hover:bg-red-700 text-white'
-                    : 'bg-blue-600 hover:bg-blue-700 text-white'
-                }`}
-              >
-                {isSoundMuted ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
-                <span>{isSoundMuted ? 'تشغيل' : 'صامت'}</span>
-              </button>
-
-              <button
-                onClick={leaveSeat}
-                className="px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded-md text-white transition-colors text-xs font-medium"
-              >
-                مغادرة
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* شريط اختبار الصوت */}
-        <div className="flex items-center gap-3 p-2 bg-gray-800/30 rounded-lg mb-3">
-          <div className="flex items-center gap-2">
-            {/* مؤشر حالة المايك */}
-            <div className={`w-2 h-2 rounded-full ${
-              audioPermission === 'granted'
-                ? 'bg-green-500'
-                : audioPermission === 'denied'
-                  ? 'bg-red-500'
-                  : 'bg-yellow-500'
-            }`}></div>
-
-
-          </div>
-
-
-
-
-
-          {audioPermission === 'denied' && (
-            <span className="text-xs text-red-400">
-              مرفوض
-            </span>
-          )}
-        </div>
-
-        {/* إزالة Tab Switcher */}
       </div>
 
-      {/* Content - المقاعد والمحادثة في شاشة واحدة */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      {/* تأثيرات الخلفية */}
+      <div className="absolute inset-0 overflow-hidden z-0">
+        <div className="absolute top-10 left-10 w-40 h-40 bg-purple-500/10 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-10 right-10 w-60 h-60 bg-indigo-500/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-56 h-56 bg-pink-500/5 rounded-full blur-3xl animate-pulse delay-2000"></div>
+      </div>
+
+      {/* الهيدر */}
+      <div className="relative z-10 bg-gradient-to-r from-purple-800/60 to-indigo-800/60 backdrop-blur-md border-b border-purple-500/30 p-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full flex items-center justify-center">
+            <Volume2 className="w-4 h-4 text-white" />
+          </div>
+          <div>
+            <h1 className="text-base font-bold text-white">الغرفة الصوتية</h1>
+            <p className="text-purple-200 text-xs">تواصل مع الأصدقاء</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 bg-black/30 backdrop-blur-sm px-2 py-1 rounded-full border border-purple-500/20">
+            <div className={`w-2 h-2 rounded-full ${isConnecting ? 'bg-yellow-400 animate-pulse' : 'bg-green-400'}`}></div>
+            <span className="text-white text-xs font-medium">
+              {isConnecting ? 'جاري الاتصال...' : 'متصل'}
+            </span>
+          </div>
+          <div className="flex items-center gap-1 bg-black/30 backdrop-blur-sm px-2 py-1 rounded-full border border-purple-500/20">
+            <Users className="w-3 h-3 text-purple-300" />
+            <span className="text-white text-xs font-medium">
+              {roomData?.seats.filter(seat => seat.user).length || 0}/{roomData?.maxSeats || 8}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* منطقة المقاعد */}
+      <div className="flex-1 p-3 relative z-10">
         {/* المقاعد الصوتية - مضغوطة */}
         <div className="p-2 border-b border-gray-700/50 flex-shrink-0">
           {/* المقاعد المدورة - صف واحد مضغوط */}
@@ -1748,7 +1687,122 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService, onBa
         </div>
       )}
 
+      {/* قائمة الألعاب المختصرة */}
+      {showGames && (
+        <div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 z-30 animate-slide-up">
+          <div className="bg-gradient-to-br from-purple-900/90 to-indigo-900/90 backdrop-blur-xl rounded-2xl p-4 border border-purple-500/30 shadow-2xl">
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={() => openGame('/game8.html')}
+                className="group relative p-3 bg-gradient-to-br from-green-500/20 to-emerald-500/20 hover:from-green-500/40 hover:to-emerald-500/40 rounded-xl border border-green-500/30 hover:border-green-400/50 transition-all duration-300 transform hover:scale-105"
+                title="صناديق الحظ"
+              >
+                <div className="w-8 h-8 bg-gradient-to-r from-green-500 to-emerald-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <span className="text-white font-bold text-sm">🎯</span>
+                </div>
+              </button>
+              <button 
+                onClick={() => openGame('/speed-challenge.html')}
+                className="group relative p-3 bg-gradient-to-br from-yellow-500/20 to-orange-500/20 hover:from-yellow-500/40 hover:to-orange-500/40 rounded-xl border border-yellow-500/30 hover:border-yellow-400/50 transition-all duration-300 transform hover:scale-105"
+                title="تحدي السرعة"
+              >
+                <div className="w-8 h-8 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <span className="text-white font-bold text-sm">⚡</span>
+                </div>
+              </button>
+              <button 
+                onClick={() => openGame('/mind-puzzles.html')}
+                className="group relative p-3 bg-gradient-to-br from-blue-500/20 to-cyan-500/20 hover:from-blue-500/40 hover:to-cyan-500/40 rounded-xl border border-blue-500/30 hover:border-blue-400/50 transition-all duration-300 transform hover:scale-105"
+                title="ألغاز العقل"
+              >
+                <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <span className="text-white font-bold text-sm">🧩</span>
+                </div>
+              </button>
+              <button 
+                onClick={() => openGame('/memory-match.html')}
+                className="group relative p-3 bg-gradient-to-br from-purple-500/20 to-pink-500/20 hover:from-purple-500/40 hover:to-pink-500/40 rounded-xl border border-purple-500/30 hover:border-purple-400/50 transition-all duration-300 transform hover:scale-105"
+                title="لعبة الذاكرة"
+              >
+                <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <span className="text-white font-bold text-sm">🧠</span>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
+      {/* أزرار التحكم في الأسفل - تصميم دائري حديث */}
+      <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-30">
+        <div className="flex items-center gap-3">
+          {/* زر كتم/إلغاء كتم المايك */}
+          {isInSeat && (
+            <button
+              onClick={toggleMute}
+              className={`group relative w-14 h-14 rounded-full flex items-center justify-center transition-all duration-500 shadow-2xl transform hover:scale-110 hover:rotate-12 ${
+                isMuted
+                  ? 'bg-gradient-to-br from-red-500 to-red-600 shadow-red-500/50 hover:shadow-red-500/70'
+                  : 'bg-gradient-to-br from-green-500 to-emerald-500 shadow-green-500/50 hover:shadow-green-500/70'
+              }`}
+              title={isMuted ? 'إلغاء كتم المايك' : 'كتم المايك'}
+            >
+              <div className={`absolute inset-0 rounded-full blur-lg opacity-50 group-hover:opacity-70 transition-opacity ${
+                isMuted ? 'bg-red-500' : 'bg-green-500'
+              }`}></div>
+              {isMuted ? (
+                <MicOff className="w-6 h-6 text-white relative z-10 group-hover:scale-110 transition-transform" />
+              ) : (
+                <Mic className="w-6 h-6 text-white relative z-10 group-hover:scale-110 transition-transform" />
+              )}
+              <div className={`absolute inset-0 rounded-full border-2 border-white/30 animate-ping ${
+                isMuted ? 'border-red-400' : 'border-green-400'
+              }`}></div>
+            </button>
+          )}
+          {/* زر المغادرة */}
+          {isInSeat && (
+            <button
+              onClick={leaveSeat}
+              className="group relative w-14 h-14 bg-gradient-to-br from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 rounded-full flex items-center justify-center transition-all duration-500 shadow-2xl shadow-red-500/50 hover:shadow-red-500/70 transform hover:scale-110 hover:rotate-12"
+              title="مغادرة المقعد"
+              disabled={isConnecting}
+            >
+              <div className="absolute inset-0 rounded-full blur-lg bg-red-500 opacity-50 group-hover:opacity-70 transition-opacity"></div>
+              <X className="w-6 h-6 text-white relative z-10 group-hover:scale-110 transition-transform" />
+              <div className="absolute inset-0 rounded-full border-2 border-red-400/30 animate-ping"></div>
+            </button>
+          )}
+          {/* زر المحادثة النصية */}
+          <button
+            onClick={() => setShowChat(!showChat)}
+            className={`group relative w-14 h-14 rounded-full flex items-center justify-center transition-all duration-500 shadow-2xl transform hover:scale-110 hover:rotate-12 ${
+              showChat
+                ? 'bg-gradient-to-br from-purple-600 to-purple-700 shadow-purple-500/50 hover:shadow-purple-500/70'
+                : 'bg-gradient-to-br from-purple-500 to-purple-600 shadow-purple-500/50 hover:shadow-purple-500/70'
+            }`}
+            title="المحادثة النصية"
+          >
+            <div className="absolute inset-0 rounded-full blur-lg bg-purple-500 opacity-50 group-hover:opacity-70 transition-opacity"></div>
+            <MessageCircle className="w-6 h-6 text-white relative z-10 group-hover:scale-110 transition-transform" />
+            <div className="absolute inset-0 rounded-full border-2 border-purple-400/30 animate-ping"></div>
+          </button>
+          {/* زر الألعاب المختصر */}
+          <button
+            onClick={() => setShowGames(!showGames)}
+            className={`group relative w-14 h-14 rounded-full flex items-center justify-center transition-all duration-500 shadow-2xl transform hover:scale-110 hover:rotate-12 ${
+              showGames
+                ? 'bg-gradient-to-br from-indigo-600 to-indigo-700 shadow-indigo-500/50 hover:shadow-indigo-500/70'
+                : 'bg-gradient-to-br from-indigo-500 to-indigo-600 shadow-indigo-500/50 hover:shadow-indigo-500/70'
+            }`}
+            title="الألعاب"
+          >
+            <div className="absolute inset-0 rounded-full blur-lg bg-indigo-500 opacity-50 group-hover:opacity-70 transition-opacity"></div>
+            <Target className="w-6 h-6 text-white relative z-10 group-hover:scale-110 transition-transform" />
+            <div className="absolute inset-0 rounded-full border-2 border-indigo-400/30 animate-ping"></div>
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
