@@ -15,7 +15,6 @@ const translations = {
     password: "كلمة المرور",
     loginButton: "دخول",
     switchToRegister: "ليس لديك حساب؟ إنشاء حساب",
-    loginDesc: "أنشطة مربحة تمتزج مع المرح والصداقات",
     requiredFields: "الرجاء إدخال اسم المستخدم وكلمة المرور",
     loginFailed: "فشل في تسجيل الدخول"
   },
@@ -25,7 +24,6 @@ const translations = {
     password: "Password",
     loginButton: "Login",
     switchToRegister: "Don't have an account? Register",
-    loginDesc: "Profitable activities that blend with fun and friendships",
     requiredFields: "Please enter username and password",
     loginFailed: "Login failed"
   },
@@ -35,7 +33,6 @@ const translations = {
     password: "پاس ورڈ",
     loginButton: "داخل ہوں",
     switchToRegister: "اکاؤنٹ نہیں ہے؟ رجسٹر کریں",
-    loginDesc: "منافع بخش سرگرمیاں جو تفریح اور دوستی کے ساتھ ملتی ہیں",
     requiredFields: "براہ کرم صارف نام اور پاس ورڈ درج کریں",
     loginFailed: "لاگ ان ناکام"
   },
@@ -45,7 +42,6 @@ const translations = {
     password: "Contraseña",
     loginButton: "Entrar",
     switchToRegister: "¿No tienes cuenta? Regístrate",
-    loginDesc: "Actividades rentables que se mezclan con diversión y amistades",
     requiredFields: "Por favor ingresa nombre de usuario y contraseña",
     loginFailed: "Error al iniciar sesión"
   }
@@ -105,21 +101,41 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess, onSwitchToRegiste
 
           <div className="relative z-10">
           <div className="text-center mb-6">
-            <div className="relative mx-auto mb-4">
-              <div className="w-16 h-16 bg-gradient-to-br from-blue-600 via-blue-700 to-blue-800 rounded-full flex items-center justify-center mx-auto relative shadow-xl shadow-blue-500/40 hover:shadow-blue-500/60 transition-all duration-500 hover:scale-105 group">
-                <Box className="w-8 h-8 text-white drop-shadow-lg" />
-                <Infinity className="w-4 h-4 text-white absolute -top-0.5 -right-0.5 animate-spin" style={{ animationDuration: '8s' }} />
+            {/* الشعار المتحرك داخل الحاوية الزرقاء */}
+            <div className="relative mx-auto mb-6">
+              <div className="relative group">
+                {/* الكرة ثلاثية الأبعاد - دوران طولي مثل الكرة الأرضية */}
+                <div className="w-24 h-24 sphere-3d rounded-full flex items-center justify-center relative group-hover:scale-110 transition-all duration-500 rotate-y mx-auto">
+
+                  {/* طبقة الألوان المتحركة */}
+                  <div className="color-layer"></div>
+
+                  {/* النص داخل الكرة ثلاثية الأبعاد */}
+                  <div className="text-center relative z-10">
+                    <div className="bg-gradient-to-r from-yellow-200 via-amber-100 to-blue-200 bg-clip-text text-transparent font-black text-sm leading-tight mb-1 drop-shadow-2xl" style={{ textShadow: '2px 2px 4px rgba(0,0,0,0.8), 0 0 10px rgba(255,255,255,0.3)' }}>
+                      INFINITY
+                    </div>
+                    <div className="bg-gradient-to-r from-yellow-200 via-amber-100 to-blue-200 bg-clip-text text-transparent font-black text-sm leading-tight drop-shadow-2xl" style={{ textShadow: '2px 2px 4px rgba(0,0,0,0.8), 0 0 10px rgba(255,255,255,0.3)' }}>
+                      BOX
+                    </div>
+                  </div>
+
+                  {/* أيقونة اللانهاية */}
+                  <Infinity className="w-4 h-4 text-white absolute -top-1 -right-1 animate-spin bg-gradient-to-r from-yellow-600 to-blue-700 rounded-full p-0.5 z-20" style={{ animationDuration: '12s' }} />
+                </div>
+
+                {/* هالة متوهجة كروية - دوران طولي معاكس */}
+                <div className="absolute inset-0 sphere-glow rounded-full blur-xl opacity-30 group-hover:opacity-50 transition-opacity duration-500 rotate-y-reverse"></div>
+
+                {/* دوائر إضافية للتأثير - حلقات مدارية طولية */}
+                <div className="absolute inset-0 rounded-full border-2 border-white/10 rotate-y-fast"></div>
+                <div className="absolute -inset-2 rounded-full border border-white/5 rotate-y-slow"></div>
               </div>
-              {/* هالة إضافية للأيقونة */}
-              <div className="absolute inset-0 bg-gradient-to-br from-blue-600 via-blue-700 to-blue-800 rounded-full blur-lg opacity-30 animate-pulse"></div>
             </div>
 
             <h2 className="text-xl font-bold bg-gradient-to-r from-white via-purple-200 to-pink-200 bg-clip-text text-transparent mb-2 drop-shadow-lg">
               {translate('login')}
             </h2>
-            <p className="text-purple-200 font-medium text-sm">
-              🌟 {translate('loginDesc')} 🌟
-            </p>
           </div>
 
         {error && (

@@ -14,8 +14,6 @@ const translations = {
     login: "تسجيل الدخول",
     register: "إنشاء حساب",
     selectLanguage: "اختر اللغة",
-    loginDesc: "أنشطة مربحة تمتزج مع المرح والصداقات",
-    registerDesc: "انضم إلينا واستمتع بتجربة فريدة",
     registerSuccess: "تم إنشاء الحساب بنجاح!",
     welcomeMessage: "مرحباً بك في INFINITY BOX - يمكنك الآن تسجيل الدخول"
   },
@@ -24,8 +22,6 @@ const translations = {
     login: "Login",
     register: "Register",
     selectLanguage: "Select Language",
-    loginDesc: "Profitable activities that blend with fun and friendships",
-    registerDesc: "Join us and enjoy a unique experience",
     registerSuccess: "Account created successfully!",
     welcomeMessage: "Welcome to INFINITY BOX - you can now login"
   },
@@ -34,8 +30,6 @@ const translations = {
     login: "لاگ ان",
     register: "رجسٹر",
     selectLanguage: "زبان منتخب کریں",
-    loginDesc: "منافع بخش سرگرمیاں جو تفریح اور دوستی کے ساتھ ملتی ہیں",
-    registerDesc: "ہمارے ساتھ شامل ہوں اور منفرد تجربہ کا لطف اٹھائیں",
     registerSuccess: "اکاؤنٹ کامیابی سے بن گیا!",
     welcomeMessage: "INFINITY BOX میں خوش آمدید - اب آپ لاگ ان کر سکتے ہیں"
   },
@@ -44,8 +38,6 @@ const translations = {
     login: "Iniciar Sesión",
     register: "Registrarse",
     selectLanguage: "Seleccionar Idioma",
-    loginDesc: "Actividades rentables que se mezclan con diversión y amistades",
-    registerDesc: "Únete a nosotros y disfruta de una experiencia única",
     registerSuccess: "¡Cuenta creada exitosamente!",
     welcomeMessage: "Bienvenido a INFINITY BOX - ahora puedes iniciar sesión"
   }
@@ -216,84 +208,34 @@ const AuthPage: React.FC<AuthPageProps> = ({ onAuthSuccess }) => {
       </div>
 
       <div className="relative z-10 min-h-screen flex flex-col">
-        {/* Header - شعار دائري */}
-        <header className="text-center py-12 relative">
-          <div className="relative z-10">
-            {/* شعار دائري في المنتصف */}
-            <div className="inline-flex items-center justify-center mb-8">
-              <div className="relative group">
-                {/* الكرة ثلاثية الأبعاد - دوران طولي مثل الكرة الأرضية */}
-                <div className="w-32 h-32 sphere-3d rounded-full flex items-center justify-center relative group-hover:scale-110 transition-all duration-500 rotate-y">
-
-                  {/* طبقة الألوان المتحركة */}
-                  <div className="color-layer"></div>
-
-                  {/* النص داخل الكرة ثلاثية الأبعاد */}
-                  <div className="text-center relative z-10">
-                    <div className="bg-gradient-to-r from-yellow-200 via-amber-100 to-blue-200 bg-clip-text text-transparent font-black text-lg leading-tight mb-1 drop-shadow-2xl" style={{ textShadow: '2px 2px 4px rgba(0,0,0,0.8), 0 0 10px rgba(255,255,255,0.3)' }}>
-                      INFINITY
-                    </div>
-                    <div className="bg-gradient-to-r from-yellow-200 via-amber-100 to-blue-200 bg-clip-text text-transparent font-black text-lg leading-tight drop-shadow-2xl" style={{ textShadow: '2px 2px 4px rgba(0,0,0,0.8), 0 0 10px rgba(255,255,255,0.3)' }}>
-                      BOX
-                    </div>
-                  </div>
-
-                  {/* أيقونة اللانهاية */}
-                  <Infinity className="w-6 h-6 text-white absolute -top-2 -right-2 animate-spin bg-gradient-to-r from-yellow-600 to-blue-700 rounded-full p-1 z-20" style={{ animationDuration: '12s' }} />
-                </div>
-
-                {/* هالة متوهجة كروية - دوران طولي معاكس */}
-                <div className="absolute inset-0 sphere-glow rounded-full blur-xl opacity-30 group-hover:opacity-50 transition-opacity duration-500 rotate-y-reverse"></div>
-
-                {/* دوائر إضافية للتأثير - حلقات مدارية طولية */}
-                <div className="absolute inset-0 rounded-full border-2 border-white/10 rotate-y-fast"></div>
-                <div className="absolute -inset-2 rounded-full border border-white/5 rotate-y-slow"></div>
-              </div>
-            </div>
-          </div>
-
-          {/* تأثير خلفي متحرك */}
-          <div className="absolute inset-0 flex items-center justify-center opacity-5">
-            <div className="text-8xl font-black text-white animate-spin" style={{ animationDuration: '25s' }}>∞</div>
-          </div>
-        </header>
-
-        {/* المحتوى الرئيسي - تسجيل الدخول فقط */}
-        <div className="flex-1 flex items-start justify-center px-4 pt-8 pb-8">
+        {/* المحتوى الرئيسي - تسجيل الدخول مع الشعار المتحرك */}
+        <div className="flex-1 flex items-center justify-center px-4 py-8">
           <div className="w-full max-w-md mx-auto">
-
-            {/* حاوية تسجيل الدخول فقط */}
-            <div className="flex items-center justify-center">
-              <div className="w-full">
-                {showSuccess ? (
-                  <div className="w-full max-w-md mx-auto">
-                    <div className="bg-green-500/20 border border-green-500/50 rounded-3xl p-8 text-center">
-                      <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                      </div>
-                      <h3 className="text-xl font-bold text-white mb-2">{translate('registerSuccess')}</h3>
-                      <p className="text-green-300">{translate('welcomeMessage')}</p>
-                    </div>
+            {showSuccess ? (
+              <div className="w-full max-w-md mx-auto">
+                <div className="bg-green-500/20 border border-green-500/50 rounded-3xl p-8 text-center">
+                  <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
                   </div>
-                ) : currentView === 'login' ? (
-                  <LoginForm
-                    onLoginSuccess={handleLoginSuccess}
-                    onSwitchToRegister={() => setCurrentView('register')}
-                  />
-                ) : (
-                  <RegisterForm
-                    onRegisterSuccess={handleRegisterSuccess}
-                    onSwitchToLogin={() => setCurrentView('login')}
-                  />
-                )}
+                  <h3 className="text-xl font-bold text-white mb-2">{translate('registerSuccess')}</h3>
+                  <p className="text-green-300">{translate('welcomeMessage')}</p>
+                </div>
               </div>
-            </div>
+            ) : currentView === 'login' ? (
+              <LoginForm
+                onLoginSuccess={handleLoginSuccess}
+                onSwitchToRegister={() => setCurrentView('register')}
+              />
+            ) : (
+              <RegisterForm
+                onRegisterSuccess={handleRegisterSuccess}
+                onSwitchToLogin={() => setCurrentView('login')}
+              />
+            )}
           </div>
         </div>
-
-
       </div>
     </div>
   );
