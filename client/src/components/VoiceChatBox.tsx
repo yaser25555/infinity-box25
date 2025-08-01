@@ -92,11 +92,11 @@ const VoiceChatBox: React.FC<VoiceChatBoxProps> = ({
   const getMessageTypeIcon = (messageType: string) => {
     switch (messageType) {
       case 'system':
-        return <AlertCircle className="w-4 h-4 text-blue-400" />;
+        return <AlertCircle className="w-4 h-4 text-purple-400" />;
       case 'mic_request':
         return <Mic className="w-4 h-4 text-yellow-400" />;
       default:
-        return <MessageCircle className="w-4 h-4 text-gray-400" />;
+        return <MessageCircle className="w-4 h-4 text-purple-300" />;
     }
   };
 
@@ -105,34 +105,23 @@ const VoiceChatBox: React.FC<VoiceChatBoxProps> = ({
     
     switch (messageType) {
       case 'system':
-        return 'bg-blue-900/30 border-blue-500/30 text-blue-200';
+        return 'bg-purple-900/50 border-purple-500/30 text-purple-200';
       case 'mic_request':
-        return 'bg-yellow-900/30 border-yellow-500/30 text-yellow-200';
+        return 'bg-yellow-900/50 border-yellow-500/30 text-yellow-200';
       default:
         return isOwnMessage
-          ? 'bg-purple-900/50 border-purple-500/30 text-white'
-          : 'bg-gray-800/50 border-gray-600/30 text-gray-200';
+          ? 'bg-purple-600/70 border-purple-500/50 text-white'
+          : 'bg-purple-900/30 border-purple-500/20 text-purple-200';
     }
   };
 
   return (
-    <div className="bg-gradient-to-br from-gray-900/50 to-blue-900/30 rounded-xl border border-blue-500/20 flex flex-col h-[600px]">
-      {/* Header */}
-      <div className="p-4 border-b border-gray-700/50">
-        <h3 className="text-lg font-bold text-white flex items-center gap-2">
-          <MessageCircle className="w-5 h-5 text-blue-400" />
-          المحادثة النصية
-        </h3>
-        <p className="text-sm text-gray-400 mt-1">
-          {messages.length} رسالة
-        </p>
-      </div>
-
+    <div className="bg-gradient-to-br from-purple-900/50 to-indigo-900/50 backdrop-blur-sm rounded-xl border border-purple-500/30 flex flex-col h-[500px]">
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-gray-800">
+      <div className="flex-1 overflow-y-auto p-4 scrollbar-thin scrollbar-thumb-purple-600 scrollbar-track-purple-900/30">
         <div className="flex flex-col space-y-3">
           {messages.length === 0 ? (
-            <div className="text-center text-gray-400 py-8">
+            <div className="text-center text-purple-300 py-8">
               <MessageCircle className="w-12 h-12 mx-auto mb-3 opacity-50" />
               <p>لا توجد رسائل بعد</p>
               <p className="text-sm mt-1">ابدأ المحادثة!</p>
@@ -143,7 +132,7 @@ const VoiceChatBox: React.FC<VoiceChatBoxProps> = ({
                 key={message._id}
                 className={`p-3 rounded-lg border ${getMessageStyle(message.messageType, message.sender._id)} ${
                   message.messageType !== 'system' && message.sender._id === currentUser.id
-                    ? 'max-w-[60%] self-end ml-auto'
+                    ? 'max-w-[80%] self-end ml-auto'
                     : ''
                 }`}
               >
@@ -177,7 +166,7 @@ const VoiceChatBox: React.FC<VoiceChatBoxProps> = ({
       </div>
 
       {/* Input Area */}
-      <div className="p-4 border-t border-gray-700/50">
+      <div className="p-4 border-t border-purple-500/30">
         <form onSubmit={handleSendMessage} className="flex gap-2">
           <div className="flex-1 relative">
             <input
@@ -189,11 +178,11 @@ const VoiceChatBox: React.FC<VoiceChatBoxProps> = ({
               placeholder="اكتب رسالتك هنا..."
               maxLength={500}
               disabled={isSending}
-              className="w-full px-4 py-2 bg-gray-800/50 border border-gray-600/50 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500/50 focus:bg-gray-800/70 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full px-4 py-2 bg-purple-900/50 border border-purple-500/30 rounded-lg text-white placeholder-purple-300 focus:outline-none focus:border-purple-400 focus:bg-purple-900/70 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             />
             
             {/* Character Counter */}
-            <div className="absolute bottom-1 left-2 text-xs text-gray-500">
+            <div className="absolute bottom-1 left-2 text-xs text-purple-400">
               {messageInput.length}/500
             </div>
           </div>
@@ -202,7 +191,7 @@ const VoiceChatBox: React.FC<VoiceChatBoxProps> = ({
           <button
             type="submit"
             disabled={!messageInput.trim() || isSending}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg text-white transition-colors flex items-center gap-2"
+            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg text-white transition-colors flex items-center gap-2 shadow-lg shadow-purple-600/25"
             title="إرسال الرسالة"
           >
             <Send className="w-4 h-4" />
@@ -214,7 +203,7 @@ const VoiceChatBox: React.FC<VoiceChatBoxProps> = ({
             <button
               type="button"
               onClick={onRequestMic}
-              className="px-3 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg text-white transition-colors flex items-center gap-1"
+              className="px-3 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg text-white transition-colors flex items-center gap-1 shadow-lg shadow-yellow-600/25"
               title="طلب المايك"
             >
               <Mic className="w-4 h-4" />
@@ -225,14 +214,14 @@ const VoiceChatBox: React.FC<VoiceChatBoxProps> = ({
 
         {/* Status Messages */}
         {isInWaitingQueue && (
-          <div className="mt-2 p-2 bg-yellow-900/30 border border-yellow-500/30 rounded-lg text-yellow-200 text-sm flex items-center gap-2">
+          <div className="mt-2 p-2 bg-yellow-900/50 border border-yellow-500/30 rounded-lg text-yellow-200 text-sm flex items-center gap-2">
             <Clock className="w-4 h-4" />
             <span>أنت في قائمة انتظار المايك</span>
           </div>
         )}
 
         {/* Instructions */}
-        <div className="mt-2 text-xs text-gray-500 flex items-center gap-4">
+        <div className="mt-2 text-xs text-purple-400 flex items-center gap-4">
           <span>اضغط Enter للإرسال</span>
           <span>الحد الأقصى: 500 حرف</span>
         </div>

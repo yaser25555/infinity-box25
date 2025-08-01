@@ -15,7 +15,11 @@ import {
   Settings,
   RefreshCw,
   Wifi,
-  WifiOff
+  WifiOff,
+  Gamepad2,
+  X,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react';
 
 interface VoiceRoomProps {
@@ -84,6 +88,8 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
   const [isInWaitingQueue, setIsInWaitingQueue] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const [showGames, setShowGames] = useState(false);
 
   // WebRTC Voice Chat states
   const [isVoiceConnected, setIsVoiceConnected] = useState(false);
@@ -259,12 +265,14 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
         loadVoiceRoom(); // إعادة تحميل في حالة عدم وجود action محدد
       }
 
-      // إذا انضم مستخدم جديد للمقعد، ابدأ اتصال WebRTC
-      if (data.action === 'seat_joined' && isInSeat && data.userId !== user.id) {
-        setTimeout(() => {
-          webrtcServiceRef.current?.sendOffer(data.userId);
-        }, 1000);
-      }
+              // إذا انضم مستخدم جديد للمقعد، ابدأ اتصال WebRTC
+        if (data.action === 'seat_joined' && isInSeat && data.userId !== user.id) {
+          setTimeout(() => {
+            if (webrtcServiceRef.current) {
+              webrtcServiceRef.current.sendOffer(data.userId);
+            }
+          }, 1000);
+        }
     };
 
     // معالج استقبال Voice Activity من المستخدمين الآخرين
@@ -282,41 +290,21 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
         });
 
         // تحديث حالة التحدث في بيانات الغرفة
-        setRoomData(prev => ({
-          ...prev,
-          seats: prev.seats.map(seat =>
-            seat.user?._id === data.userId
-              ? { ...seat, isSpeaking: data.isSpeaking }
-              : seat
-          )
-        }));
-      }
-    };
-
-    // إعداد معالج النشاط الصوتي
-    webrtcServiceRef.current.onVoiceActivity = (data: any) => {
-      // تحديث حالة التحدث في الغرفة المحلية
-      setRoomData(prev => ({
-        ...prev,
-        seats: prev.seats.map(seat =>
-          seat.user?._id === user.id
-            ? { ...seat, isSpeaking: data.isSpeaking }
-            : seat
-        )
-      }));
-
-      // إرسال Voice Activity للمستخدمين الآخرين عبر WebSocket
-      if (isInSeat) {
-        wsService.send({
-          type: 'voice_activity',
-          data: {
-            userId: user.id,
-            level: data.level,
-            isSpeaking: data.isSpeaking
-          }
+        setRoomData(prev => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            seats: prev.seats.map(seat =>
+              seat.user?._id === data.userId
+                ? { ...seat, isSpeaking: data.isSpeaking }
+                : seat
+            )
+          };
         });
       }
     };
+
+
 
     // معالج الأحداث الإدارية
     const handleAdminActionUpdate = (data: any) => {
@@ -449,7 +437,8 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
 
         } catch (webrtcError) {
           console.error('❌ WebRTC initialization failed:', webrtcError);
-          setError(`فشل في بدء المحادثة الصوتية: ${webrtcError.message}`);
+          const errorMessage = webrtcError instanceof Error ? webrtcError.message : 'خطأ غير معروف';
+          setError(`فشل في بدء المحادثة الصوتية: ${errorMessage}`);
         }
       }
 
@@ -592,10 +581,10 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-96">
+      <div className="flex items-center justify-center h-screen bg-gradient-to-br from-purple-900 via-purple-800 to-indigo-900">
         <div className="text-center">
-          <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-purple-400" />
-          <p className="text-gray-300">جاري تحميل الغرفة الصوتية...</p>
+          <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-purple-300" />
+          <p className="text-purple-200">جاري تحميل الغرفة الصوتية...</p>
         </div>
       </div>
     );
@@ -603,132 +592,86 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
 
   if (error) {
     return (
-      <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-6 text-center">
-        <p className="text-red-400 mb-4">{error}</p>
-        <button
-          onClick={loadVoiceRoom}
-          className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
-        >
-          إعادة المحاولة
-        </button>
+      <div className="flex items-center justify-center h-screen bg-gradient-to-br from-purple-900 via-purple-800 to-indigo-900">
+        <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-6 text-center">
+          <p className="text-red-400 mb-4">{error}</p>
+          <button
+            onClick={loadVoiceRoom}
+            className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+          >
+            إعادة المحاولة
+          </button>
+        </div>
       </div>
     );
   }
 
   if (!roomData) {
     return (
-      <div className="text-center text-gray-400">
-        <p>لا توجد بيانات للغرفة الصوتية</p>
+      <div className="flex items-center justify-center h-screen bg-gradient-to-br from-purple-900 via-purple-800 to-indigo-900">
+        <div className="text-center text-purple-200">
+          <p>لا توجد بيانات للغرفة الصوتية</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className={`max-w-7xl mx-auto p-4 sm:p-6 space-y-6 ${isInSeat ? 'pb-24 sm:pb-6' : ''}`}>
-      {/* Header */}
-      <div className="bg-gradient-to-r from-purple-900/50 to-blue-900/50 rounded-xl p-4 sm:p-6 border border-purple-500/20">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-white mb-2 flex items-center gap-3">
-              <Volume2 className="w-6 sm:w-8 h-6 sm:h-8 text-purple-400" />
-              INFINITY ROOM
-            </h1>
-            <p className="text-gray-300 text-sm sm:text-base">غرفة صوتية للمحادثة مع الأصدقاء</p>
-          </div>
+    <div className="relative h-screen bg-gradient-to-br from-purple-900 via-purple-800 to-indigo-900 overflow-hidden">
+      {/* شعار انفنتي في المنتصف مع تأثيرات */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div className="text-center opacity-5">
+          <div className="text-9xl font-bold text-white mb-4 animate-pulse">∞</div>
+          <div className="text-3xl font-bold text-purple-200 tracking-wider">INFINITY</div>
+        </div>
+      </div>
 
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-            <div className="flex items-center gap-4 text-gray-300">
-              <div className="flex items-center gap-2">
-                <Users className="w-4 sm:w-5 h-4 sm:h-5" />
-                <span className="text-sm">{roomData.seats.filter(seat => seat.user).length}/{roomData.maxSeats}</span>
+      {/* تأثيرات الخلفية */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute top-20 left-20 w-72 h-72 bg-purple-500/10 rounded-full blur-3xl animate-pulse"></div>
+        <div className="absolute bottom-20 right-20 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }}></div>
+        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-purple-600/5 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '4s' }}></div>
+      </div>
+
+      {/* المحتوى الرئيسي */}
+      <div className="relative z-10 h-full flex flex-col">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-purple-800/60 to-indigo-800/60 backdrop-blur-md border-b border-purple-500/30 p-4 shadow-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full flex items-center justify-center shadow-lg shadow-purple-500/50">
+                <Volume2 className="w-7 h-7 text-white" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-white tracking-wide">INFINITY ROOM</h1>
+                <p className="text-purple-200 text-sm">غرفة صوتية للمحادثة مع الأصدقاء</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 bg-black/30 backdrop-blur-sm px-4 py-2 rounded-full border border-purple-500/20">
+                <Users className="w-4 h-4 text-purple-300" />
+                <span className="text-purple-200 text-sm font-medium">
+                  {roomData.seats.filter(seat => seat.user).length}/{roomData.maxSeats}
+                </span>
               </div>
 
-              {/* مؤشر حالة Agora */}
-              <div className="flex items-center gap-2 bg-black/20 px-2 sm:px-3 py-1 rounded-lg">
+              <div className="flex items-center gap-2 bg-black/30 backdrop-blur-sm px-4 py-2 rounded-full border border-purple-500/20">
                 {isVoiceConnected ? (
-                  <Wifi className="w-3 sm:w-4 h-3 sm:h-4 text-green-400" />
+                  <Wifi className="w-4 h-4 text-green-400" />
                 ) : (
-                  <WifiOff className="w-3 sm:w-4 h-3 sm:h-4 text-red-400" />
+                  <WifiOff className="w-4 h-4 text-red-400" />
                 )}
-                <span className="text-xs sm:text-sm">
+                <span className="text-purple-200 text-sm font-medium">
                   {isVoiceConnected ? 'متصل' : 'غير متصل'}
                 </span>
               </div>
             </div>
-            
-            {/* أزرار التحكم - محسنة للهواتف المحمولة */}
-            {isInSeat && (
-              <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
-                <button
-                  onClick={toggleMute}
-                  className={`w-full sm:w-auto p-3 sm:p-2 rounded-lg transition-colors text-sm font-medium ${
-                    isMuted
-                      ? 'bg-red-600 hover:bg-red-700 text-white'
-                      : 'bg-green-600 hover:bg-green-700 text-white'
-                  }`}
-                  title={isMuted ? 'إلغاء كتم المايك' : 'كتم المايك'}
-                >
-                  <div className="flex items-center justify-center gap-2">
-                    {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
-                    <span className="sm:hidden">{isMuted ? 'إلغاء الكتم' : 'كتم المايك'}</span>
-                  </div>
-                </button>
-
-                <button
-                  onClick={leaveSeat}
-                  className="w-full sm:w-auto px-4 py-3 sm:py-2 bg-red-600 hover:bg-red-700 rounded-lg text-white transition-colors text-sm font-medium"
-                >
-                  مغادرة المقعد
-                </button>
-              </div>
-            )}
           </div>
         </div>
-      </div>
 
-      {/* أزرار التحكم للكمبيوتر */}
-      {isInSeat && (
-        <div className="hidden sm:block mb-6">
-          <div className="bg-gradient-to-r from-gray-800/50 to-purple-900/30 rounded-xl p-4 border border-purple-500/20">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-                  <span className="text-green-400 font-medium">متصل - مقعد {currentSeatNumber}</span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={toggleMute}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-200 font-medium ${
-                    isMuted
-                      ? 'bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/25'
-                      : 'bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-600/25'
-                  }`}
-                  title={isMuted ? 'إلغاء كتم المايك' : 'كتم المايك'}
-                >
-                  {isMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-                  <span>{isMuted ? 'إلغاء كتم المايك' : 'كتم المايك'}</span>
-                </button>
-
-                <button
-                  onClick={leaveSeat}
-                  className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-white transition-all duration-200 font-medium shadow-lg shadow-red-600/25"
-                  title="مغادرة المقعد"
-                  disabled={isConnecting}
-                >
-                  <span>{isConnecting ? 'جاري المغادرة...' : 'مغادرة المقعد'}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* المقاعد الصوتية */}
-        <div className="lg:col-span-2">
+        <div className="flex-1 p-6 overflow-y-auto">
           <VoiceSeats
             seats={roomData.seats}
             waitingQueue={roomData.waitingQueue}
@@ -743,19 +686,149 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
           />
         </div>
 
-        {/* المحادثة النصية */}
-        <div className="lg:col-span-1">
-          <VoiceChatBox
-            messages={messages}
-            currentUser={user}
-            isInWaitingQueue={isInWaitingQueue}
-            onSendMessage={sendMessage}
-            onRequestMic={requestMic}
-          />
+        {/* نافذة المحادثة النصية - تنزل من الأعلى */}
+        {showChat && (
+          <div className="absolute top-0 left-0 right-0 z-20 bg-gradient-to-b from-purple-900/95 to-indigo-900/95 backdrop-blur-md border-b border-purple-500/40 shadow-2xl">
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <MessageCircle className="w-5 h-5 text-purple-300" />
+                  المحادثة النصية
+                </h3>
+                <button
+                  onClick={() => setShowChat(false)}
+                  className="w-8 h-8 bg-purple-600 hover:bg-purple-700 rounded-full flex items-center justify-center transition-all duration-300 shadow-lg shadow-purple-600/50"
+                >
+                  <X className="w-4 h-4 text-white" />
+                </button>
+              </div>
+              <VoiceChatBox
+                messages={messages}
+                currentUser={user}
+                isInWaitingQueue={isInWaitingQueue}
+                onSendMessage={sendMessage}
+                onRequestMic={requestMic}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* شريط الألعاب - في الأسفل */}
+        {showGames && (
+          <div className="absolute bottom-20 left-0 right-0 z-20 bg-gradient-to-t from-purple-900/95 to-indigo-900/95 backdrop-blur-md border-t border-purple-500/40 shadow-2xl">
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Gamepad2 className="w-5 h-5 text-purple-300" />
+                  الألعاب
+                </h3>
+                <button
+                  onClick={() => setShowGames(false)}
+                  className="w-8 h-8 bg-purple-600 hover:bg-purple-700 rounded-full flex items-center justify-center transition-all duration-300 shadow-lg shadow-purple-600/50"
+                >
+                  <X className="w-4 h-4 text-white" />
+                </button>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <button className="p-4 bg-purple-600/50 hover:bg-purple-600/70 rounded-lg transition-all duration-300 transform hover:scale-105 shadow-lg shadow-purple-600/25">
+                  <div className="text-center">
+                    <div className="w-12 h-12 bg-purple-500 rounded-lg mx-auto mb-2 flex items-center justify-center shadow-inner">
+                      <span className="text-white font-bold text-xl">🎮</span>
+                    </div>
+                    <span className="text-white text-sm font-medium">لعبة 1</span>
+                  </div>
+                </button>
+                <button className="p-4 bg-purple-600/50 hover:bg-purple-600/70 rounded-lg transition-all duration-300 transform hover:scale-105 shadow-lg shadow-purple-600/25">
+                  <div className="text-center">
+                    <div className="w-12 h-12 bg-purple-500 rounded-lg mx-auto mb-2 flex items-center justify-center shadow-inner">
+                      <span className="text-white font-bold text-xl">🎯</span>
+                    </div>
+                    <span className="text-white text-sm font-medium">لعبة 2</span>
+                  </div>
+                </button>
+                <button className="p-4 bg-purple-600/50 hover:bg-purple-600/70 rounded-lg transition-all duration-300 transform hover:scale-105 shadow-lg shadow-purple-600/25">
+                  <div className="text-center">
+                    <div className="w-12 h-12 bg-purple-500 rounded-lg mx-auto mb-2 flex items-center justify-center shadow-inner">
+                      <span className="text-white font-bold text-xl">🧩</span>
+                    </div>
+                    <span className="text-white text-sm font-medium">لعبة 3</span>
+                  </div>
+                </button>
+                <button className="p-4 bg-purple-600/50 hover:bg-purple-600/70 rounded-lg transition-all duration-300 transform hover:scale-105 shadow-lg shadow-purple-600/25">
+                  <div className="text-center">
+                    <div className="w-12 h-12 bg-purple-500 rounded-lg mx-auto mb-2 flex items-center justify-center shadow-inner">
+                      <span className="text-white font-bold text-xl">🎲</span>
+                    </div>
+                    <span className="text-white text-sm font-medium">لعبة 4</span>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* أزرار التحكم في الأسفل - مدورة وصغيرة */}
+        <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-30">
+          <div className="flex items-center gap-4">
+            {/* زر كتم/إلغاء كتم المايك */}
+            {isInSeat && (
+              <button
+                onClick={toggleMute}
+                className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-300 shadow-xl transform hover:scale-110 ${
+                  isMuted
+                    ? 'bg-red-500 hover:bg-red-600 shadow-red-500/50'
+                    : 'bg-green-500 hover:bg-green-600 shadow-green-500/50'
+                }`}
+                title={isMuted ? 'إلغاء كتم المايك' : 'كتم المايك'}
+              >
+                {isMuted ? (
+                  <MicOff className="w-6 h-6 text-white" />
+                ) : (
+                  <Mic className="w-6 h-6 text-white" />
+                )}
+              </button>
+            )}
+
+            {/* زر المغادرة */}
+            {isInSeat && (
+              <button
+                onClick={leaveSeat}
+                className="w-14 h-14 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center transition-all duration-300 shadow-xl shadow-red-500/50 transform hover:scale-110"
+                title="مغادرة المقعد"
+                disabled={isConnecting}
+              >
+                <X className="w-6 h-6 text-white" />
+              </button>
+            )}
+
+            {/* زر المحادثة النصية */}
+            <button
+              onClick={() => setShowChat(!showChat)}
+              className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-300 shadow-xl transform hover:scale-110 ${
+                showChat
+                  ? 'bg-purple-600 shadow-purple-500/50'
+                  : 'bg-purple-500 hover:bg-purple-600 shadow-purple-500/50'
+              }`}
+              title="المحادثة النصية"
+            >
+              <MessageCircle className="w-6 h-6 text-white" />
+            </button>
+
+            {/* زر الألعاب */}
+            <button
+              onClick={() => setShowGames(!showGames)}
+              className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-300 shadow-xl transform hover:scale-110 ${
+                showGames
+                  ? 'bg-indigo-600 shadow-indigo-500/50'
+                  : 'bg-indigo-500 hover:bg-indigo-600 shadow-indigo-500/50'
+              }`}
+              title="الألعاب"
+            >
+              <Gamepad2 className="w-6 h-6 text-white" />
+            </button>
+          </div>
         </div>
       </div>
-
-
     </div>
   );
 };
