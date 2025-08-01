@@ -31,7 +31,7 @@ console.log('🎤 WebRTC Voice Chat initialized');
 
 // إعداد CORS
 app.use(cors({
-  origin: ['https://infinitybox25.onrender.com', 'http://localhost:3000', 'http://localhost:5173', 'null'],
+  origin: ['https://infinity-box25-of3k.onrender.com/', 'http://localhost:3000', 'http://localhost:5173', 'null'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
@@ -42,6 +42,47 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // تقديم ملفات الواجهة الأمامية React
 app.use(express.static(path.join(__dirname, 'dist', 'public')));
+
+// إعداد مجلدات التحميل
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// إعداد التحميل
+const multer = require('multer');
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'uploads/');
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({ storage: storage });
+
+// API لتحميل الصور
+app.post('/upload-avatar', upload.single('avatar'), async (req, res) => {
+  try {
+    const userId = req.body.userId;
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // حذف الصورة القديمة إذا موجودة
+    if (user.profileImage) {
+      const oldPath = path.join(__dirname, 'uploads', user.profileImage);
+      fs.unlinkSync(oldPath);
+    }
+
+    // تحديث الصورة في قاعدة البيانات
+    user.profileImage = req.file.filename;
+    await user.save();
+
+    res.json({ message: 'Avatar uploaded successfully', url: `/uploads/${req.file.filename}` });
+  } catch (error) {
+    res.status(500).json({ message: 'Error uploading avatar', error: error.message });
+  }
+});
 
 // WebRTC test page removed
 
@@ -150,7 +191,18 @@ const userSchema = new mongoose.Schema({
     type: String,
     enum: ['online', 'offline', 'away'],
     default: 'offline'
-  }
+  },
+  gameBalances: [{
+    gameId: { type: String, required: true },
+    balance: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    transactionId: { type: String },
+    verificationCode: { type: String },
+    verificationStatus: { type: String, enum: ['pending', 'verified', 'expired'], default: 'pending' }
+  }]
 }, {
   timestamps: true
 });
@@ -222,13 +274,30 @@ const Gift = mongoose.model('Gift', giftSchema);
 
 // نموذج المعاملات
 const transactionSchema = new mongoose.Schema({
+  transactionId: {
+    type: String,
+    default: () => uuidv4(),
+    unique: true
+  },
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   type: { type: String, enum: ['charge', 'gift_sent', 'gift_received', 'shield_purchase', 'game_win', 'game_loss', 'exchange'], required: true },
   amount: { type: Number, required: true },
   currency: { type: String, enum: ['gold', 'pearls'], required: true },
   description: { type: String },
   relatedUser: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  status: { type: String, enum: ['pending', 'completed', 'failed'], default: 'completed' }
+  status: { type: String, enum: ['pending', 'completed', 'failed'], default: 'completed' },
+  verified: { type: Boolean, default: false },
+  verificationCode: { type: String },
+  verificationStatus: { type: String, enum: ['pending', 'verified', 'expired'], default: 'pending' },
+  gameSessionId: { type: String },
+  gameResult: { type: Object },
+  gameTimestamp: { type: Date, default: Date.now },
+  gameVerification: {
+    serverVerified: { type: Boolean, default: false },
+    clientVerified: { type: Boolean, default: false },
+    verificationHash: { type: String },
+    verificationTimestamp: { type: Date }
+  }
 }, {
   timestamps: true
 });
@@ -522,7 +591,74 @@ const GameStatsSchema = new mongoose.Schema({
 
 const GameStats = mongoose.model('GameStats', GameStatsSchema);
 
+// نموذج الألعاب
+const gameSchema = new mongoose.Schema({
+  gameId: {
+    type: String,
+    default: () => uuidv4(),
+    unique: true
+  },
+  gameName: { type: String, required: true },
+  gameType: { type: String, enum: ['single', 'multiplayer'], required: true },
+  maxPlayers: { type: Number, required: true },
+  minPlayers: { type: Number, required: true },
+  gameStatus: {
+    type: String,
+    enum: ['pending', 'in-progress', 'completed', 'cancelled'],
+    default: 'pending'
+  },
+  players: [{
+    playerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    playerName: { type: String, required: true },
+    score: { type: Number, default: 0 },
+    isReady: { type: Boolean, default: false },
+    isWinner: { type: Boolean, default: false },
+    balance: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    transactionId: { type: String },
+    verificationCode: { type: String },
+    verificationStatus: { type: String, enum: ['pending', 'verified', 'expired'], default: 'pending' }
+  }],
+  gameStartedAt: { type: Date },
+  gameEndedAt: { type: Date },
+  gameDuration: { type: Number },
+  gameRules: { type: String },
+  gameSettings: { type: Object },
+  gameResults: { type: Object },
+  gameHistory: [{
+    action: { type: String, required: true },
+    playerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    timestamp: { type: Date, default: Date.now },
+    details: { type: Object },
+    transactionId: { type: String },
+    verificationStatus: { type: String, enum: ['pending', 'verified', 'expired'] }
+  }],
+  balanceHistory: [{
+    transactionId: { type: String },
+    playerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    amount: { type: Number },
+    currency: { type: String, enum: ['gold', 'pearls'] },
+    action: { type: String, enum: ['deposit', 'withdraw', 'transfer'] },
+    status: { type: String, enum: ['pending', 'completed', 'failed'] },
+    verified: { type: Boolean, default: false },
+    verificationCode: { type: String },
+    verificationStatus: { type: String, enum: ['pending', 'verified', 'expired'] },
+    timestamp: { type: Date, default: Date.now }
+  }],
+  gameVerification: {
+    serverVerified: { type: Boolean, default: false },
+    clientVerified: { type: Boolean, default: false },
+    verificationHash: { type: String },
+    verificationTimestamp: { type: Date }
+  }
+}, {
+  timestamps: true
+});
 
+const Game = mongoose.model('Game', gameSchema);
 
 // Routes الأساسية
 

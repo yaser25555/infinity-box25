@@ -986,28 +986,28 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService, onBa
         <div className="text-center opacity-10">
           <div className="text-8xl font-bold text-white mb-2 animate-pulse">∞</div>
           <div className="text-2xl font-bold text-purple-200 tracking-wider">INFINITY</div>
+          </div>
         </div>
-      </div>
 
       {/* تأثيرات الخلفية */}
       <div className="absolute inset-0 overflow-hidden z-0">
         <div className="absolute top-10 left-10 w-40 h-40 bg-purple-500/10 rounded-full blur-3xl animate-pulse"></div>
         <div className="absolute bottom-10 right-10 w-60 h-60 bg-indigo-500/10 rounded-full blur-3xl animate-pulse delay-1000"></div>
         <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-56 h-56 bg-pink-500/5 rounded-full blur-3xl animate-pulse delay-2000"></div>
-      </div>
+            </div>
 
       {/* الهيدر */}
       <div className="relative z-10 bg-gradient-to-r from-purple-800/60 to-indigo-800/60 backdrop-blur-md border-b border-purple-500/30 p-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full flex items-center justify-center">
             <Volume2 className="w-4 h-4 text-white" />
-          </div>
+            </div>
           <div>
             <h1 className="text-base font-bold text-white">الغرفة الصوتية</h1>
             <p className="text-purple-200 text-xs">تواصل مع الأصدقاء</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
           <div className="flex items-center gap-1 bg-black/30 backdrop-blur-sm px-2 py-1 rounded-full border border-purple-500/20">
             <div className={`w-2 h-2 rounded-full ${isConnecting ? 'bg-yellow-400 animate-pulse' : 'bg-green-400'}`}></div>
             <span className="text-white text-xs font-medium">
@@ -1019,7 +1019,7 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService, onBa
             <span className="text-white text-xs font-medium">
               {roomData?.seats.filter(seat => seat.user).length || 0}/{roomData?.maxSeats || 8}
             </span>
-          </div>
+        </div>
         </div>
       </div>
 
@@ -1786,20 +1786,6 @@ const MobileVoiceRoom: React.FC<MobileVoiceRoomProps> = ({ user, wsService, onBa
             <div className="absolute inset-0 rounded-full blur-lg bg-purple-500 opacity-50 group-hover:opacity-70 transition-opacity"></div>
             <MessageCircle className="w-6 h-6 text-white relative z-10 group-hover:scale-110 transition-transform" />
             <div className="absolute inset-0 rounded-full border-2 border-purple-400/30 animate-ping"></div>
-          </button>
-          {/* زر الألعاب المختصر */}
-          <button
-            onClick={() => setShowGames(!showGames)}
-            className={`group relative w-14 h-14 rounded-full flex items-center justify-center transition-all duration-500 shadow-2xl transform hover:scale-110 hover:rotate-12 ${
-              showGames
-                ? 'bg-gradient-to-br from-indigo-600 to-indigo-700 shadow-indigo-500/50 hover:shadow-indigo-500/70'
-                : 'bg-gradient-to-br from-indigo-500 to-indigo-600 shadow-indigo-500/50 hover:shadow-indigo-500/70'
-            }`}
-            title="الألعاب"
-          >
-            <div className="absolute inset-0 rounded-full blur-lg bg-indigo-500 opacity-50 group-hover:opacity-70 transition-opacity"></div>
-            <Target className="w-6 h-6 text-white relative z-10 group-hover:scale-110 transition-transform" />
-            <div className="absolute inset-0 rounded-full border-2 border-indigo-400/30 animate-ping"></div>
           </button>
         </div>
       </div>

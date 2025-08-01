@@ -635,36 +635,22 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
 
       {/* المحتوى الرئيسي */}
       <div className="relative z-10 h-full flex flex-col">
-        {/* الهيدر */}
-        <div className="bg-gradient-to-r from-purple-800/60 to-indigo-800/60 backdrop-blur-md border-b border-purple-500/30 p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full flex items-center justify-center">
-                <Volume2 className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h1 className="text-lg font-bold text-white">الغرفة الصوتية</h1>
-                <p className="text-purple-200 text-sm">تواصل مع الأصدقاء</p>
-              </div>
-            </div>
+        {/* حالة الاتصال */}
+        <div className="flex items-center gap-3">
+          {/* حالة الاتصال */}
+          <div className="flex items-center gap-2 bg-black/30 backdrop-blur-sm px-3 py-2 rounded-full border border-purple-500/20">
+            <div className={`w-2 h-2 rounded-full ${isConnecting ? 'bg-yellow-400 animate-pulse' : 'bg-green-400'}`}></div>
+            <span className="text-white text-sm font-medium">
+              {isConnecting ? 'جاري الاتصال...' : 'متصل'}
+            </span>
+          </div>
 
-            <div className="flex items-center gap-3">
-              {/* حالة الاتصال */}
-              <div className="flex items-center gap-2 bg-black/30 backdrop-blur-sm px-3 py-2 rounded-full border border-purple-500/20">
-                <div className={`w-2 h-2 rounded-full ${isConnecting ? 'bg-yellow-400 animate-pulse' : 'bg-green-400'}`}></div>
-                <span className="text-white text-sm font-medium">
-                  {isConnecting ? 'جاري الاتصال...' : 'متصل'}
-                </span>
-              </div>
-
-              {/* عدد المستخدمين */}
-              <div className="flex items-center gap-2 bg-black/30 backdrop-blur-sm px-3 py-2 rounded-full border border-purple-500/20">
-                <Users className="w-4 h-4 text-purple-300" />
-                <span className="text-white text-sm font-medium">
-                  {roomData?.seats.filter(seat => seat.user).length || 0}/{roomData?.maxSeats || 8}
-                </span>
-              </div>
-            </div>
+          {/* عدد المستخدمين */}
+          <div className="flex items-center gap-2 bg-black/30 backdrop-blur-sm px-3 py-2 rounded-full border border-purple-500/20">
+            <Users className="w-4 h-4 text-purple-300" />
+            <span className="text-white text-sm font-medium">
+              {roomData?.seats.filter(seat => seat.user).length || 0}/{roomData?.maxSeats || 8}
+            </span>
           </div>
         </div>
 
@@ -685,17 +671,15 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
         </div>
 
         {/* نافذة المحادثة النصية */}
-        {showChat && (
-          <div className="absolute top-20 left-4 right-4 z-40 animate-slide-down">
-            <VoiceChatBox
-              messages={messages}
-              currentUser={user}
-              isInWaitingQueue={isInWaitingQueue}
-              onSendMessage={sendMessage}
-              onRequestMic={requestMic}
-            />
-          </div>
-        )}
+        <div className="w-full max-w-2xl mx-auto mt-auto z-40">
+          <VoiceChatBox
+            messages={messages}
+            currentUser={user}
+            isInWaitingQueue={isInWaitingQueue}
+            onSendMessage={sendMessage}
+            onRequestMic={requestMic}
+          />
+        </div>
 
         {/* قائمة الألعاب المختصرة */}
         {showGames && (
@@ -743,7 +727,7 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
           </div>
         )}
 
-        {/* أزرار التحكم في الأسفل - تصميم دائري بسيط بلا مؤثرات */}
+        {/* أزرار التحكم في الأسفل */}
         <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-30">
           <div className="flex items-center gap-4">
             {/* زر كتم/إلغاء كتم المايك */}
@@ -762,16 +746,6 @@ const VoiceRoom: React.FC<VoiceRoomProps> = ({ user, wsService }) => {
                 )}
               </button>
             )}
-            {/* زر الألعاب المختصر (مكان زر الانتظار) */}
-            <button
-              onClick={() => setShowGames(!showGames)}
-              className={`w-16 h-16 rounded-full flex items-center justify-center text-white text-lg font-bold focus:outline-none transition-colors duration-200 ${
-                showGames ? 'bg-indigo-600' : 'bg-indigo-500'
-              }`}
-              title="الألعاب"
-            >
-              <Gamepad2 className="w-7 h-7" />
-            </button>
             {/* زر المحادثة النصية */}
             <button
               onClick={() => setShowChat(!showChat)}
