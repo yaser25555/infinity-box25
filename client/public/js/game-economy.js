@@ -196,7 +196,7 @@ class GameEconomy {
     }
 
     /**
-     * تحديث رصيد اللاعب
+     * تحديث رصيد اللاعب مع تحسينات المزامنة
      */
     async updatePlayerBalance(result) {
         try {
@@ -213,8 +213,17 @@ class GameEconomy {
                 await this.startGameSession(result.gameType || 'unknown');
             }
 
+            // التحقق من الرصيد قبل التحديث
+            const currentBalance = this.gameSession.currentBalance;
+            const newBalance = currentBalance + balanceChange;
+            
+            if (newBalance < 0) {
+                console.error('❌ رصيد غير كافي للعملية');
+                return { success: false, error: 'Insufficient balance' };
+            }
+
             // تحديث الجلسة المحلية
-            this.gameSession.currentBalance += balanceChange;
+            this.gameSession.currentBalance = newBalance;
             this.gameSession.totalSpent += (result.lossAmount || 0);
             this.gameSession.totalWon += (result.winAmount || 0);
             this.gameSession.gamesPlayed++;
@@ -222,38 +231,210 @@ class GameEconomy {
             // حفظ فوري في localStorage
             this.saveGameSession();
 
-            // مزامنة مع قاعدة البيانات
-            const response = await fetch(`${this.BACKEND_URL}/api/users/update-balance`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    balanceChange: balanceChange,
-                    gameType: this.gameSession.gameType,
-                    sessionId: this.gameSession.sessionId,
-                    gameResult: result
-                })
-            });
-
-            if (!response.ok) {
-                throw new Error('فشل في تحديث الرصيد');
+            // تحديث البيانات المحلية فوراً
+            if (this.playerData) {
+                this.playerData.coins = newBalance;
             }
 
-            const updatedData = await response.json();
-            this.playerData.coins = updatedData.newBalance;
+            // تحديث الهيدر فوراً
+            if (window.playerHeader && typeof window.playerHeader.updateBalance === 'function') {
+                window.playerHeader.updateBalance(newBalance);
+            }
 
-            return {
-                success: true,
-                newBalance: updatedData.newBalance,
-                change: balanceChange
-            };
+            // مزامنة مع قاعدة البيانات مع إعادة المحاولة
+            let retryCount = 0;
+            const maxRetries = 3;
+            let lastError = null;
+
+            while (retryCount < maxRetries) {
+                try {
+                    const response = await fetch(`${this.BACKEND_URL}/api/users/update-balance`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            balanceChange: balanceChange,
+                            gameType: this.gameSession.gameType,
+                            sessionId: this.gameSession.sessionId,
+                            gameResult: result,
+                            currentBalance: currentBalance, // إرسال الرصيد الحالي للتحقق
+                            timestamp: Date.now()
+                        })
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.message || 'فشل في تحديث الرصيد');
+                    }
+
+                    const updatedData = await response.json();
+                    
+                    // التحقق من صحة البيانات المرجعة
+                    if (updatedData.success && typeof updatedData.newBalance === 'number') {
+                        // تحديث البيانات المحلية بالبيانات المؤكدة من الخادم
+                        this.gameSession.currentBalance = updatedData.newBalance;
+                        if (this.playerData) {
+                            this.playerData.coins = updatedData.newBalance;
+                        }
+                        
+                        // تحديث الهيدر بالبيانات المؤكدة
+                        if (window.playerHeader && typeof window.playerHeader.updateBalance === 'function') {
+                            window.playerHeader.updateBalance(updatedData.newBalance);
+                        }
+
+                        // حفظ الجلسة المحدثة
+                        this.saveGameSession();
+
+                        console.log('✅ تم تحديث الرصيد بنجاح:', {
+                            change: balanceChange,
+                            newBalance: updatedData.newBalance,
+                            gameType: result.gameType
+                        });
+
+                        return {
+                            success: true,
+                            newBalance: updatedData.newBalance,
+                            change: balanceChange,
+                            confirmed: true
+                        };
+                    } else {
+                        throw new Error('بيانات غير صحيحة من الخادم');
+                    }
+
+                } catch (error) {
+                    lastError = error;
+                    retryCount++;
+                    console.warn(`⚠️ محاولة ${retryCount}/${maxRetries} فشلت:`, error.message);
+                    
+                    if (retryCount < maxRetries) {
+                        // انتظار قبل إعادة المحاولة
+                        await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+                    }
+                }
+            }
+
+            // إذا فشلت جميع المحاولات، استعادة الرصيد السابق
+            console.error('❌ فشلت جميع محاولات تحديث الرصيد');
+            this.gameSession.currentBalance = currentBalance;
+            if (this.playerData) {
+                this.playerData.coins = currentBalance;
+            }
+            this.saveGameSession();
+
+            // تحديث الهيدر بالرصيد السابق
+            if (window.playerHeader && typeof window.playerHeader.updateBalance === 'function') {
+                window.playerHeader.updateBalance(currentBalance);
+            }
+
+            throw lastError;
 
         } catch (error) {
-            console.error('خطأ في تحديث الرصيد:', error);
-            throw error;
+            console.error('❌ خطأ في تحديث الرصيد:', error);
+            
+            // إرسال إشعار للمستخدم
+            this.showBalanceError(error.message);
+            
+            return {
+                success: false,
+                error: error.message,
+                balance: this.gameSession ? this.gameSession.currentBalance : 0
+            };
         }
+    }
+
+    /**
+     * عرض خطأ في تحديث الرصيد
+     */
+    showBalanceError(message) {
+        // إنشاء إشعار خطأ
+        const notification = document.createElement('div');
+        notification.className = 'balance-error-notification';
+        notification.innerHTML = `
+            <div style="
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: linear-gradient(135deg, #ef4444, #dc2626);
+                color: white;
+                padding: 15px 20px;
+                border-radius: 10px;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+                z-index: 10000;
+                max-width: 300px;
+                font-family: Arial, sans-serif;
+                animation: slideInRight 0.3s ease-out;
+            ">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 20px;">⚠️</span>
+                    <div>
+                        <div style="font-weight: bold; margin-bottom: 5px;">خطأ في تحديث الرصيد</div>
+                        <div style="font-size: 14px; opacity: 0.9;">${message}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(notification);
+
+        // إزالة الإشعار بعد 5 ثوان
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 5000);
+    }
+
+    /**
+     * التحقق من صحة الرصيد مع الخادم
+     */
+    async validateBalanceWithServer() {
+        try {
+            const token = localStorage.getItem('token');
+            if (!token) return false;
+
+            const response = await fetch(`${this.BACKEND_URL}/api/users/profile`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (response.ok) {
+                const userData = await response.json();
+                const serverBalance = userData.coins || 0;
+                const localBalance = this.gameSession ? this.gameSession.currentBalance : 0;
+
+                // إذا كان هناك اختلاف في الرصيد
+                if (Math.abs(serverBalance - localBalance) > 0.01) {
+                    console.warn('⚠️ اختلاف في الرصيد:', {
+                        local: localBalance,
+                        server: serverBalance,
+                        difference: serverBalance - localBalance
+                    });
+
+                    // تحديث الرصيد المحلي بالرصيد من الخادم
+                    if (this.gameSession) {
+                        this.gameSession.currentBalance = serverBalance;
+                    }
+                    if (this.playerData) {
+                        this.playerData.coins = serverBalance;
+                    }
+                    this.saveGameSession();
+
+                    // تحديث الهيدر
+                    if (window.playerHeader && typeof window.playerHeader.updateBalance === 'function') {
+                        window.playerHeader.updateBalance(serverBalance);
+                    }
+
+                    return true; // تم التصحيح
+                }
+            }
+        } catch (error) {
+            console.error('❌ خطأ في التحقق من الرصيد:', error);
+        }
+
+        return false;
     }
 
     /**

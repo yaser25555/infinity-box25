@@ -480,6 +480,111 @@ class PlayerHeader {
                 console.error('❌ خطأ في التحديث التلقائي:', error);
             }
         }, intervalMs);
+
+        // بدء التحقق الدوري من صحة الرصيد
+        this.startBalanceValidation(60000); // كل دقيقة
+    }
+
+    /**
+     * بدء التحقق الدوري من صحة الرصيد
+     */
+    startBalanceValidation(intervalMs = 60000) { // كل دقيقة
+        if (this.balanceValidationInterval) {
+            clearInterval(this.balanceValidationInterval);
+        }
+
+        this.balanceValidationInterval = setInterval(async () => {
+            try {
+                await this.validateBalanceWithServer();
+            } catch (error) {
+                console.error('❌ خطأ في التحقق من الرصيد:', error);
+            }
+        }, intervalMs);
+    }
+
+    /**
+     * التحقق من صحة الرصيد مع الخادم
+     */
+    async validateBalanceWithServer() {
+        try {
+            const token = localStorage.getItem('token');
+            if (!token) return;
+
+            const currentBalance = this.balance;
+            const response = await fetch(`/api/users/balance/validate?currentBalance=${currentBalance}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                
+                if (data.needsSync) {
+                    console.warn('⚠️ اختلاف في الرصيد، يتم التصحيح:', {
+                        client: data.clientBalance,
+                        server: data.serverBalance,
+                        difference: data.difference
+                    });
+
+                    // تحديث الرصيد المحلي
+                    this.balance = data.serverBalance;
+                    this.updateDisplay();
+
+                    // تحديث النظام الاقتصادي إذا كان موجوداً
+                    if (window.gameEconomy && window.gameEconomy.gameSession) {
+                        window.gameEconomy.gameSession.currentBalance = data.serverBalance;
+                        window.gameEconomy.saveGameSession();
+                    }
+
+                    // عرض إشعار للمستخدم
+                    this.showBalanceSyncNotification(data.difference);
+                }
+            }
+        } catch (error) {
+            console.error('❌ خطأ في التحقق من الرصيد:', error);
+        }
+    }
+
+    /**
+     * عرض إشعار مزامنة الرصيد
+     */
+    showBalanceSyncNotification(difference) {
+        const notification = document.createElement('div');
+        notification.className = 'balance-sync-notification';
+        notification.innerHTML = `
+            <div style="
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+                color: white;
+                padding: 15px 20px;
+                border-radius: 10px;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+                z-index: 10000;
+                max-width: 300px;
+                font-family: Arial, sans-serif;
+                animation: slideInRight 0.3s ease-out;
+            ">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 20px;">🔄</span>
+                    <div>
+                        <div style="font-weight: bold; margin-bottom: 5px;">تم مزامنة الرصيد</div>
+                        <div style="font-size: 14px; opacity: 0.9;">تم تصحيح الاختلاف: ${difference.toFixed(2)}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(notification);
+
+        // إزالة الإشعار بعد 3 ثوان
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 3000);
     }
 
     /**
@@ -489,6 +594,11 @@ class PlayerHeader {
         if (this.updateInterval) {
             clearInterval(this.updateInterval);
             this.updateInterval = null;
+        }
+        
+        if (this.balanceValidationInterval) {
+            clearInterval(this.balanceValidationInterval);
+            this.balanceValidationInterval = null;
         }
     }
 }

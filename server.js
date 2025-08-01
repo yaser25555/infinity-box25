@@ -3643,53 +3643,123 @@ app.put('/api/users/admin/manage-user-image', authenticateToken, async (req, res
 
 // ========== GAME ECONOMY ENDPOINTS ==========
 
-// تحديث رصيد اللاعب
+// تحديث رصيد اللاعب مع تحسينات المزامنة
 app.post('/api/users/update-balance', authenticateToken, async (req, res) => {
   try {
-    const { balanceChange, gameType, sessionId, gameResult } = req.body;
+    const { balanceChange, gameType, sessionId, gameResult, currentBalance, timestamp } = req.body;
+    
+    console.log('💰 تحديث الرصيد:', {
+      userId: req.user.userId,
+      balanceChange,
+      gameType,
+      sessionId,
+      currentBalance,
+      timestamp: new Date(timestamp)
+    });
+
     const user = await User.findById(req.user.userId);
 
     if (!user) {
+      console.error('❌ المستخدم غير موجود:', req.user.userId);
       return res.status(404).json({ message: 'المستخدم غير موجود' });
     }
 
     // التحقق من صحة التغيير
-    const newBalance = (user.goldCoins || 0) + balanceChange;
+    const currentServerBalance = user.goldCoins || 0;
+    const newBalance = currentServerBalance + balanceChange;
+    
     if (newBalance < 0) {
-      return res.status(400).json({ message: 'رصيد غير كافي' });
+      console.error('❌ رصيد غير كافي:', {
+        currentBalance: currentServerBalance,
+        change: balanceChange,
+        newBalance
+      });
+      return res.status(400).json({ 
+        message: 'رصيد غير كافي',
+        currentBalance: currentServerBalance,
+        requiredChange: balanceChange
+      });
     }
 
-    // تحديث الرصيد
-    user.goldCoins = newBalance;
-    await user.save();
+    // التحقق من التزامن إذا تم إرسال الرصيد الحالي
+    if (currentBalance !== undefined && Math.abs(currentServerBalance - currentBalance) > 0.01) {
+      console.warn('⚠️ اختلاف في الرصيد:', {
+        clientBalance: currentBalance,
+        serverBalance: currentServerBalance,
+        difference: currentServerBalance - currentBalance
+      });
+      
+      // إرجاع الرصيد الحالي من الخادم للتصحيح
+      return res.status(409).json({
+        message: 'اختلاف في الرصيد، يرجى التحديث',
+        currentBalance: currentServerBalance,
+        clientBalance: currentBalance,
+        needsSync: true
+      });
+    }
+
+    // تحديث الرصيد مع التحقق من التزامن
+    const updateResult = await User.findByIdAndUpdate(
+      req.user.userId,
+      { 
+        $set: { goldCoins: newBalance },
+        $inc: { 
+          totalGamesPlayed: 1,
+          totalCoinsEarned: Math.max(0, balanceChange),
+          totalCoinsSpent: Math.abs(Math.min(0, balanceChange))
+        }
+      },
+      { 
+        new: true,
+        runValidators: true 
+      }
+    );
+
+    if (!updateResult) {
+      throw new Error('فشل في تحديث الرصيد في قاعدة البيانات');
+    }
 
     // حفظ إحصائيات اللعبة
     const gameStats = new GameStats({
       userId: req.user.userId,
       gameType: gameType,
       sessionId: sessionId,
-      startTime: new Date(),
-      betAmount: gameResult.lossAmount || 0,
-      winAmount: gameResult.winAmount || 0,
-      lossAmount: gameResult.lossAmount || 0,
+      startTime: new Date(timestamp || Date.now()),
+      betAmount: gameResult?.lossAmount || 0,
+      winAmount: gameResult?.winAmount || 0,
+      lossAmount: gameResult?.lossAmount || 0,
       netResult: balanceChange,
-      playerScore: gameResult.playerScore || 0,
-      skillFactor: gameResult.skillFactor || 0,
-      economicFactor: gameResult.economicFactor || 0,
-      winProbability: gameResult.probability || 0
+      playerScore: gameResult?.playerScore || 0,
+      skillFactor: gameResult?.skillFactor || 0,
+      economicFactor: gameResult?.economicFactor || 0,
+      winProbability: gameResult?.probability || 0,
+      isWin: balanceChange > 0
     });
 
     await gameStats.save();
 
+    console.log('✅ تم تحديث الرصيد بنجاح:', {
+      userId: req.user.userId,
+      oldBalance: currentServerBalance,
+      change: balanceChange,
+      newBalance: newBalance,
+      gameType
+    });
+
     res.json({
       success: true,
       newBalance: newBalance,
-      change: balanceChange
+      change: balanceChange,
+      timestamp: Date.now(),
+      confirmed: true
     });
 
   } catch (error) {
-    console.error('خطأ في تحديث الرصيد:', error);
-    res.status(500).json({ message: 'خطأ في تحديث الرصيد' });
+    console.error('❌ خطأ في تحديث الرصيد:', error);
+    res.status(500).json({ 
+      message: 'خطأ في تحديث الرصيد',
+      error: error.message 
+    });
   }
 });
 
@@ -3709,12 +3779,54 @@ app.get('/api/users/profile', authenticateToken, async (req, res) => {
       pearls: user.pearls || 0,
       profileImage: user.profileImage,
       level: user.level || 1,
-      experience: user.experience || 0
+      experience: user.experience || 0,
+      totalGamesPlayed: user.totalGamesPlayed || 0,
+      totalCoinsEarned: user.totalCoinsEarned || 0,
+      totalCoinsSpent: user.totalCoinsSpent || 0,
+      lastUpdated: user.updatedAt
     });
 
   } catch (error) {
     console.error('خطأ في جلب بيانات الملف الشخصي:', error);
     res.status(500).json({ message: 'خطأ في جلب بيانات الملف الشخصي' });
+  }
+});
+
+// التحقق من صحة الرصيد
+app.get('/api/users/balance/validate', authenticateToken, async (req, res) => {
+  try {
+    const { currentBalance } = req.query;
+    const user = await User.findById(req.user.userId);
+
+    if (!user) {
+      return res.status(404).json({ message: 'المستخدم غير موجود' });
+    }
+
+    const serverBalance = user.goldCoins || 0;
+    const clientBalance = parseFloat(currentBalance) || 0;
+    const difference = Math.abs(serverBalance - clientBalance);
+
+    const needsSync = difference > 0.01;
+
+    console.log('🔍 التحقق من الرصيد:', {
+      userId: req.user.userId,
+      clientBalance,
+      serverBalance,
+      difference,
+      needsSync
+    });
+
+    res.json({
+      needsSync,
+      serverBalance,
+      clientBalance,
+      difference,
+      timestamp: Date.now()
+    });
+
+  } catch (error) {
+    console.error('❌ خطأ في التحقق من الرصيد:', error);
+    res.status(500).json({ message: 'خطأ في التحقق من الرصيد' });
   }
 });
 
