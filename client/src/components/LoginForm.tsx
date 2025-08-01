@@ -104,41 +104,16 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess, onSwitchToRegiste
             <div className="text-center mb-6">
               {/* الشعار المدور كالقمر داخل الحاوية الزرقاء */}
               <div className="relative mx-auto mb-6">
-                <div className="relative group">
-                  {/* القمر المدور - تصميم كروي مثل القمر */}
-                  <div className="w-28 h-28 rounded-full flex items-center justify-center relative group-hover:scale-110 transition-all duration-500 mx-auto overflow-hidden">
-                    
-                    {/* خلفية القمر - تدرج دائري */}
-                    <div className="absolute inset-0 bg-gradient-to-br from-yellow-200 via-amber-100 to-orange-200 rounded-full shadow-2xl"></div>
-                    
-                    {/* تأثيرات القمر */}
-                    <div className="absolute inset-0 bg-gradient-to-br from-white/30 via-transparent to-black/20 rounded-full"></div>
-                    <div className="absolute top-2 left-2 w-4 h-4 bg-white/40 rounded-full blur-sm"></div>
-                    <div className="absolute top-4 right-4 w-2 h-2 bg-white/60 rounded-full"></div>
-                    <div className="absolute bottom-3 left-4 w-3 h-3 bg-white/30 rounded-full"></div>
-                    
-                    {/* النص داخل القمر */}
-                    <div className="text-center relative z-10">
-                      <div className="text-gray-800 font-black text-sm leading-tight mb-1 drop-shadow-lg">
-                        INFINITY
-                      </div>
-                      <div className="text-gray-800 font-black text-sm leading-tight drop-shadow-lg">
-                        BOX
-                      </div>
+                {/* كرة الشعار بتدرج ألوان ودوران خفيف */}
+                <div className="w-28 h-28 rounded-full flex items-center justify-center mx-auto overflow-hidden animate-spin-slow" style={{background: 'conic-gradient(from 0deg, #ff9800, #ff5722, #ffeb3b, #2196f3, #ff9800)'}}>
+                  <div className="text-center z-10 select-none">
+                    <div className="text-white font-black text-lg leading-tight mb-1 drop-shadow-lg">
+                      INFINITY
                     </div>
-
-                    {/* أيقونة اللانهاية - تدور حول القمر */}
-                    <div className="absolute -top-2 -right-2 w-6 h-6 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full flex items-center justify-center shadow-lg animate-spin" style={{ animationDuration: '8s' }}>
-                      <Infinity className="w-3 h-3 text-white" />
+                    <div className="text-white font-black text-lg leading-tight drop-shadow-lg">
+                      BOX
                     </div>
                   </div>
-
-                  {/* هالة القمر - توهج خفيف */}
-                  <div className="absolute inset-0 rounded-full blur-xl opacity-20 group-hover:opacity-30 transition-opacity duration-500" style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.3) 0%, transparent 70%)' }}></div>
-
-                  {/* حلقات مدارية حول القمر */}
-                  <div className="absolute -inset-4 rounded-full border border-white/10 animate-spin" style={{ animationDuration: '20s' }}></div>
-                  <div className="absolute -inset-6 rounded-full border border-white/5 animate-spin" style={{ animationDuration: '30s', animationDirection: 'reverse' }}></div>
                 </div>
               </div>
 

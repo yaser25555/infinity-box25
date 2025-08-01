@@ -280,6 +280,10 @@
   .backdrop-blur-3xl {
     backdrop-filter: blur(40px);
   }
+
+  .animate-spin-slow {
+    animation: spin 8s linear infinite;
+  }
 }
 
 /* Base styles */
