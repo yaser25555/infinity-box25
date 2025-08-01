@@ -1,6 +1,6 @@
 import React from 'react';
 import GameCard from './GameCard';
-import { Gamepad2, Zap, Target, Puzzle, Brain, Trees, Crown, Apple } from 'lucide-react';
+import { Gamepad2, Zap, Target, Puzzle, Brain, Trees, Crown, Apple, Users, Star } from 'lucide-react';
 import { useLocation } from 'wouter';
 
 interface GameGridProps {
@@ -9,146 +9,166 @@ interface GameGridProps {
 
 const GameGrid: React.FC<GameGridProps> = ({ setActiveTab }) => {
   const [location, setLocation] = useLocation();
+  
   const games = [
-
     {
-      id: 2,
+      id: 1,
       title: 'تحدي السرعة',
       description: 'اختبر سرعة ردود أفعالك في هذا التحدي المثير',
-      image: 'https://images.pexels.com/photos/442576/pexels-photo-442576.jpeg?auto=compress&cs=tinysrgb&w=800',
+      icon: Zap,
+      color: 'from-yellow-500 to-orange-500',
       players: 8930,
-      rating: 4,
+      rating: 4.8,
       onPlay: () => window.open('/speed-challenge.html', '_blank')
+    },
+    {
+      id: 2,
+      title: 'صناديق الحظ',
+      description: 'اكسر الصناديق واجمع الكنوز والجواهر',
+      icon: Target,
+      color: 'from-green-500 to-emerald-500',
+      players: 6780,
+      rating: 4.9,
+      onPlay: () => window.open('/game8.html', '_blank')
     },
     {
       id: 3,
       title: 'ألغاز العقل',
-      description: 'حل الألغاز المعقدة واكسب النقاط والجوائز',
-      image: 'https://images.pexels.com/photos/1040157/pexels-photo-1040157.jpeg?auto=compress&cs=tinysrgb&w=800',
+      description: 'حل الألغاز المعقدة واختبر ذكاءك',
+      icon: Puzzle,
+      color: 'from-blue-500 to-cyan-500',
       players: 12150,
-      rating: 4,
+      rating: 4.7,
       onPlay: () => window.open('/mind-puzzles.html', '_blank')
     },
     {
       id: 4,
-      title: 'صناديق الحظ',
-      description: 'اكسر الصناديق واجمع الكنوز والجواهر في لعبة صناديق الحظ المثيرة',
-      image: 'https://images.pexels.com/photos/3258/boxes-wooden-crates-market.jpg?auto=compress&cs=tinysrgb&w=800',
-      players: 6780,
-      rating: 5,
-      onPlay: () => window.open('/game8.html', '_blank')
+      title: 'قطف الفواكه',
+      description: 'اقطف الفواكه الساقطة واجمع النقاط',
+      icon: Apple,
+      color: 'from-red-500 to-pink-500',
+      players: 5430,
+      rating: 4.6,
+      onPlay: () => window.open('/fruit-catching.html', '_blank')
     },
     {
       id: 5,
-      title: 'مغامرة الكنوز',
-      description: 'انطلق في رحلة البحث عن الكنوز المفقودة',
-      image: 'https://images.pexels.com/photos/1670977/pexels-photo-1670977.jpeg?auto=compress&cs=tinysrgb&w=800',
-      players: 6780,
-      rating: 5,
-      onPlay: () => console.log('مغامرة الكنوز')
+      title: 'لعبة الذاكرة',
+      description: 'اختبر ذاكرتك وطابق البطاقات',
+      icon: Brain,
+      color: 'from-purple-500 to-indigo-500',
+      players: 7890,
+      rating: 4.8,
+      onPlay: () => window.open('/memory-match.html', '_blank')
     },
     {
       id: 6,
-      title: 'بطولة النجوم',
-      description: 'تنافس مع أفضل اللاعبين في البطولة الكبرى',
-      image: 'https://images.pexels.com/photos/163064/play-stone-network-networked-interactive-163064.jpeg?auto=compress&cs=tinysrgb&w=800',
-      players: 25600,
-      rating: 5,
-      onPlay: () => setLocation('/game')
-    },
-    {
-      id: 7,
-      title: 'عالم الخيال',
-      description: 'استكشف عوالم خيالية مليئة بالمغامرات والأسرار',
-      image: 'https://images.pexels.com/photos/1591447/pexels-photo-1591447.jpeg?auto=compress&cs=tinysrgb&w=800',
-      players: 18900,
-      rating: 4,
-      onPlay: () => console.log('عالم الخيال')
-    }
-  ];
-
-  const gameHallGames = [
-    {
-      icon: <Zap className="w-8 h-8" />,
-      title: 'تحدي السرعة',
-      description: 'اختبر سرعة ردود أفعالك في تحدي مثير',
-      color: 'from-yellow-500 to-orange-500',
-      onClick: () => window.open('/speed-challenge.html', '_blank')
-    },
-    {
-      icon: <Target className="w-8 h-8" />,
-      title: 'صناديق الحظ',
-      description: 'اكسر الصناديق واجمع الكنوز والجواهر',
-      color: 'from-green-500 to-emerald-500',
-      onClick: () => window.open('/game8.html', '_blank')
-    },
-    {
-      icon: <Puzzle className="w-8 h-8" />,
-      title: 'ألغاز العقل',
-      description: 'حل الألغاز المعقدة واختبر ذكاءك',
-      color: 'from-blue-500 to-cyan-500',
-      onClick: () => window.open('/mind-puzzles.html', '_blank')
-    },
-    {
-      icon: <Apple className="w-8 h-8" />,
-      title: 'قطف الفواكه',
-      description: 'اقطف الفواكه الساقطة واجمع النقاط',
-      color: 'from-red-500 to-yellow-500',
-      onClick: () => window.open('/fruit-catching.html', '_blank')
-    },
-    {
-      icon: <Brain className="w-8 h-8" />,
-      title: 'لعبة الذاكرة',
-      description: 'اختبر ذاكرتك وطابق البطاقات',
-      color: 'from-purple-500 to-pink-500',
-      onClick: () => window.open('/memory-match.html', '_blank')
-    },
-    {
-      icon: <Trees className="w-8 h-8" />,
       title: 'لعبة الغابة',
       description: 'اكتشف الحيوانات وتعلم أسماءها',
+      icon: Trees,
       color: 'from-green-600 to-emerald-600',
-      onClick: () => window.open('/forest-game.html', '_blank')
+      players: 4560,
+      rating: 4.5,
+      onPlay: () => window.open('/forest-game.html', '_blank')
     }
   ];
 
-
-
-
-
   return (
-    <div className="space-y-8">
-      {/* القاعات الرئيسية - ثلاثة أقسام */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 lg:gap-8">
-        {/* قاعة الألعاب */}
-        <section>
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-8 h-8 bg-gradient-to-r from-yellow-500 to-blue-600 rounded-lg flex items-center justify-center">
-              <Gamepad2 className="w-5 h-5 text-white" />
-            </div>
-            <h2 className="text-xl lg:text-2xl font-bold bg-gradient-to-r from-yellow-300 to-blue-300 bg-clip-text text-transparent">قاعة الألعاب</h2>
-          </div>
+    <div className="flex-1 p-6">
+      <div className="max-w-6xl mx-auto">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold text-white mb-2">🎮 قاعة الألعاب</h1>
+          <p className="text-purple-300 text-lg">اختر لعبتك المفضلة واستمتع بالتحدي</p>
+        </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-            {gameHallGames.map((game, index) => (
-              <button
-                key={index}
-                onClick={game.onClick}
-                className="group p-2 sm:p-3 crystal-game-card rounded-xl text-center"
-              >
-                <div className={`w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-r ${game.color} rounded-full flex items-center justify-center mb-2 sm:mb-3 group-hover:scale-110 transition-transform duration-300 mx-auto shadow-lg ring-4 ring-white/20`}>
-                  {game.icon}
+        {/* Games Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {games.map((game) => (
+            <button
+              key={game.id}
+              onClick={game.onPlay}
+              className="group bg-gradient-to-br from-purple-900/30 to-indigo-900/30 backdrop-blur-sm rounded-xl p-6 border border-purple-500/30 transition-all duration-300 transform hover:scale-105 hover:shadow-2xl hover:shadow-purple-500/20"
+            >
+              <div className="text-center">
+                {/* Game Icon */}
+                <div className={`w-20 h-20 bg-gradient-to-r ${game.color} rounded-full mx-auto mb-4 flex items-center justify-center group-hover:scale-110 transition-transform duration-300 shadow-lg`}>
+                  <game.icon className="w-10 h-10 text-white" />
                 </div>
-                <h3 className="text-xs sm:text-sm font-semibold text-white mb-1">{game.title}</h3>
-                <p className="text-gray-300 text-xs leading-tight">{game.description}</p>
+
+                {/* Game Info */}
+                <h3 className="text-xl font-bold text-white mb-2 group-hover:text-purple-300 transition-colors">
+                  {game.title}
+                </h3>
+                
+                <p className="text-purple-300 text-sm mb-4 leading-relaxed">
+                  {game.description}
+                </p>
+
+                {/* Game Stats */}
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-1 text-purple-300">
+                    <Users className="w-4 h-4" />
+                    <span>{game.players.toLocaleString()}</span>
+                  </div>
+                  
+                  <div className="flex items-center gap-1 text-yellow-400">
+                    <Star className="w-4 h-4 fill-current" />
+                    <span>{game.rating}</span>
+                  </div>
+                </div>
+
+                {/* Play Button */}
+                <div className="mt-4">
+                  <div className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-2 rounded-full font-medium group-hover:from-purple-500 group-hover:to-indigo-500 transition-all duration-300">
+                    العب الآن
+                  </div>
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {/* Featured Game Section */}
+        <div className="mt-12">
+          <div className="bg-gradient-to-br from-yellow-900/30 to-orange-900/30 backdrop-blur-sm rounded-xl p-8 border border-yellow-500/30">
+            <div className="text-center mb-6">
+              <h2 className="text-2xl font-bold text-white mb-2">⭐ اللعبة المميزة</h2>
+              <p className="text-yellow-300">صناديق الحظ - أكثر الألعاب شعبية</p>
+            </div>
+            
+            <div className="flex items-center justify-center">
+              <button
+                onClick={() => window.open('/game8.html', '_blank')}
+                className="group bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-400 hover:to-orange-400 text-white px-8 py-4 rounded-full font-bold text-lg transition-all duration-300 transform hover:scale-105 shadow-lg shadow-yellow-500/50"
+              >
+                <div className="flex items-center gap-3">
+                  <Target className="w-6 h-6" />
+                  <span>العب صناديق الحظ الآن</span>
+                </div>
               </button>
-            ))}
+            </div>
           </div>
-        </section>
+        </div>
 
+        {/* Quick Stats */}
+        <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="bg-gradient-to-br from-purple-600/20 to-indigo-600/20 backdrop-blur-sm rounded-xl p-4 border border-purple-500/30 text-center">
+            <div className="text-2xl font-bold text-white mb-1">6</div>
+            <div className="text-purple-300 text-sm">ألعاب متاحة</div>
+          </div>
+          
+          <div className="bg-gradient-to-br from-green-600/20 to-emerald-600/20 backdrop-blur-sm rounded-xl p-4 border border-green-500/30 text-center">
+            <div className="text-2xl font-bold text-white mb-1">45K+</div>
+            <div className="text-green-300 text-sm">لاعب نشط</div>
+          </div>
+          
+          <div className="bg-gradient-to-br from-blue-600/20 to-cyan-600/20 backdrop-blur-sm rounded-xl p-4 border border-blue-500/30 text-center">
+            <div className="text-2xl font-bold text-white mb-1">4.7</div>
+            <div className="text-blue-300 text-sm">متوسط التقييم</div>
+          </div>
+        </div>
       </div>
-
-
     </div>
   );
 };
